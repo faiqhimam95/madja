@@ -455,13 +455,31 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser }) {
   const rl = { admin: "#7c3aed", wk: "#0369a1", guru: "#b45309" };
   const rn = { admin: "Administrator", wk: "Wali Kelas", guru: "Guru Mapel" };
   const [showAcct, setShowAcct] = useState(false);
+  const [showSwitch, setShowSwitch] = useState(false);
   const [form, setForm] = useState({ u: "", p: "" });
   const [acctSaved, setAcctSaved] = useState(false);
 
+  const acc = ACCS.find((a) => a.u === user.username);
+  const waliKelasAll = acc ? kelasList(acc) : [];
+  const hasWali = waliKelasAll.length > 0;
+  const hasGuru = acc ? isGuruAcc(acc, GM) : false;
+  // quick-switch only makes sense if this account has more than one "hat" to wear:
+  // both wali kelas + guru mapel, or wali kelas of more than one kelas
+  const canSwitch = user.role !== "admin" && (hasWali && hasGuru || (user.role === "wk" && waliKelasAll.length > 1));
+
+  const switchToWali = (kelas) => {
+    setUser((prev) => ({ ...prev, role: "wk", kelasAll: waliKelasAll, kelas }));
+    setShowSwitch(false);
+  };
+  const switchToGuru = () => {
+    setUser((prev) => ({ ...prev, role: "guru", asgn: GM[user.username] || [] }));
+    setShowSwitch(false);
+  };
+
   const openAcct = () => {
-    const acc = ACCS.find((a) => a.u === user.username);
     setForm({ u: user.username, p: acc?.p || "" });
     setShowAcct(true);
+    setShowSwitch(false);
     setAcctSaved(false);
   };
 
@@ -493,10 +511,40 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser }) {
               {rn[user.role]}{user.role === "wk" && user.kelas ? " — " + CL[user.kelas]?.sh : ""}
             </div>
           </div>
+          {canSwitch && (
+            <button onClick={() => { setShowSwitch((s) => !s); setShowAcct(false); }} title="Beralih peran / kelas" style={{ padding: "5px 10px", background: showSwitch ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>🔀 Beralih</button>
+          )}
           <button onClick={openAcct} title="Edit username & password saya" style={{ padding: "5px 10px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>⚙️ Akun</button>
           <button onClick={onLogout} style={{ padding: "5px 12px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>Keluar</button>
         </div>
       </div>
+
+      {showSwitch && (
+        <div style={{ position: "absolute", top: "100%", right: "16px", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", width: "240px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", zIndex: 100 }}>
+          <div style={{ fontSize: "13px", fontWeight: 500, color: "#111827", marginBottom: "10px" }}>🔀 Beralih Tampilan</div>
+          {hasWali && hasGuru && (
+            <div style={{ marginBottom: waliKelasAll.length > 1 && user.role === "wk" ? "12px" : "0" }}>
+              <div style={{ fontSize: "10px", fontWeight: 500, color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Peran</div>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button onClick={() => switchToWali(user.role === "wk" ? user.kelas : waliKelasAll[0])} style={{ flex: 1, padding: "7px 8px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: user.role === "wk" ? "#064e3b" : "#e5e7eb", color: user.role === "wk" ? "white" : "#374151" }}>👤 Wali Kelas</button>
+                <button onClick={switchToGuru} style={{ flex: 1, padding: "7px 8px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: user.role === "guru" ? "#064e3b" : "#e5e7eb", color: user.role === "guru" ? "white" : "#374151" }}>🧑‍🏫 Guru Mapel</button>
+              </div>
+            </div>
+          )}
+          {user.role === "wk" && waliKelasAll.length > 1 && (
+            <div>
+              <div style={{ fontSize: "10px", fontWeight: 500, color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Kelas</div>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {waliKelasAll.map((k) => CL[k] && (
+                  <button key={k} onClick={() => switchToWali(k)} style={{ padding: "7px 12px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: k === user.kelas ? "#064e3b" : "#e5e7eb", color: k === user.kelas ? "white" : "#374151" }}>
+                    {CL[k].sh || k}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {showAcct && (
         <div style={{ position: "absolute", top: "100%", right: "16px", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", width: "280px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", zIndex: 100 }}>
@@ -2064,23 +2112,15 @@ function RaportTab({ kelas, cl, sts, grades, kepData }) {
 function WkView({ user, allG, allKep, setAllKep, CL, ST }) {
   const [tab, setTab] = useState("leger");
   const kelasAll = (user.kelasAll && user.kelasAll.length > 0) ? user.kelasAll : [user.kelas].filter(Boolean);
-  const [activeKelas, setActiveKelas] = useState(user.kelas || kelasAll[0]);
+  const activeKelas = user.kelas || kelasAll[0];
   const kelas = CL[activeKelas] ? activeKelas : (kelasAll.find((k) => CL[k]) || kelasAll[0]);
   const cl = CL[kelas];
   const sts = ST[kelas] || [];
+  // Kelas aktif dipilih lewat quick-switcher "🔀 Beralih" di header; reset ke tab Leger tiap kali berganti kelas.
+  useEffect(() => { setTab("leger"); }, [kelas]);
   if (!cl) return null;
   return (
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
-      {kelasAll.length > 1 && (
-        <div style={{ display: "flex", gap: "6px", marginBottom: "10px", flexWrap: "wrap" }}>
-          {kelasAll.map((k) => CL[k] && (
-            <button key={k} onClick={() => { setActiveKelas(k); setTab("leger"); }}
-              style={{ padding: "7px 16px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: k === kelas ? "#064e3b" : "#e5e7eb", color: k === kelas ? "white" : "#374151" }}>
-              {CL[k].sh || k}
-            </button>
-          ))}
-        </div>
-      )}
       <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
         <div>
           <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>{cl.name}</h2>
