@@ -580,7 +580,7 @@ function SC({ icon, label, val }) {
   );
 }
 
-function AdminDashboard({ CL, ST, allG }) {
+function AdminDashboard({ CL, ST, allG, allKep }) {
   const ks = sortedKelas(CL);
   const tot = ks.reduce((s, k) => s + (ST[k] || []).length, 0);
   const group1 = ks.filter((k) => KELAS_ORDER.includes(k));
@@ -588,6 +588,9 @@ function AdminDashboard({ CL, ST, allG }) {
 
   const renderKelas = (key) => {
     const cl = CL[key], sts = ST[key] || [], gr = allG[key] || {};
+    const kepData = allKep[key] || {};
+    const naikCount = sts.reduce((n, _, si) => n + (kepData[si]?.keputusan === "naik" ? 1 : 0), 0);
+    const tidakNaikCount = sts.reduce((n, _, si) => n + (kepData[si]?.keputusan === "tidak_naik" ? 1 : 0), 0);
     const tot2 = sts.length * cl.mapel.length;
     let fill = 0;
     const mapelStats = cl.mapel.map((m) => {
@@ -633,6 +636,10 @@ function AdminDashboard({ CL, ST, allG }) {
               </span>
             );
           })}
+        </div>
+        <div style={{ display: "flex", gap: "10px", marginTop: "8px", fontSize: "10.5px", color: "#4b5563" }}>
+          <span>Naik Kelas: <strong style={{ color: "#065f46" }}>{naikCount}</strong></span>
+          <span>Tidak Naik: <strong style={{ color: "#991b1b" }}>{tidakNaikCount}</strong></span>
         </div>
       </div>
     );
@@ -1501,7 +1508,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
   );
 }
 
-function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, setAllKep }) {
+function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep }) {
   const [tab, setTab] = useState("dashboard");
   const tabs = [
     ["dashboard", "📊 Dashboard"],
@@ -1519,7 +1526,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
           <button key={k} onClick={() => setTab(k)} style={{ flex: "1 1 auto", padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
         ))}
       </div>
-      {tab === "dashboard" && <AdminDashboard CL={CL} ST={ST} allG={allG} />}
+      {tab === "dashboard" && <AdminDashboard CL={CL} ST={ST} allG={allG} allKep={allKep} />}
       {tab === "kelas" && <AdminKelas CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} />}
       {tab === "wali" && <AdminWali ACCS={ACCS} setACCS={setACCS} CL={CL} setCL={setCL} GM={GM} setGM={setGM} />}
       {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} />}
@@ -1659,9 +1666,12 @@ function GuruView({ user, allG, setAllG, CL, ST }) {
   );
 }
 
-function LegerNilai({ kelas, grades, CL, ST }) {
+function LegerNilai({ kelas, grades, CL, ST, kep }) {
   const cl = CL[kelas];
   const sts = ST[kelas] || [];
+  const kepData = kep || {};
+  const naikCount = sts.reduce((n, _, si) => n + (kepData[si]?.keputusan === "naik" ? 1 : 0), 0);
+  const tidakNaikCount = sts.reduce((n, _, si) => n + (kepData[si]?.keputusan === "tidak_naik" ? 1 : 0), 0);
   const matrix = sts.map((nm, si) => {
     const sc = {};
     cl.mapel.forEach((m) => {
@@ -1696,6 +1706,8 @@ function LegerNilai({ kelas, grades, CL, ST }) {
           <span>Rata kelas: <strong style={{ color: "#047857" }}>{avg}</strong></span>
           <span>Tertinggi: <strong>{mx}</strong></span>
           <span>Terendah: <strong>{mn}</strong></span>
+          <span>Naik Kelas: <strong style={{ color: "#065f46" }}>{naikCount}</strong></span>
+          <span>Tidak Naik: <strong style={{ color: "#991b1b" }}>{tidakNaikCount}</strong></span>
         </div>
       </div>
       <div style={{ overflowX: "auto" }}>
@@ -2136,7 +2148,7 @@ function WkView({ user, allG, allKep, setAllKep, CL, ST }) {
           <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
         ))}
       </div>
-      {tab === "leger" && <LegerNilai kelas={kelas} grades={allG[kelas] || {}} CL={CL} ST={ST} />}
+      {tab === "leger" && <LegerNilai kelas={kelas} grades={allG[kelas] || {}} CL={CL} ST={ST} kep={allKep[kelas]} />}
       {tab === "kepribadian" && <KepribadianView kelas={kelas} allKep={allKep} setAllKep={setAllKep} ST={ST} CL={CL} grades={allG[kelas] || {}} />}
       {tab === "raport" && <RaportTab kelas={kelas} cl={cl} sts={sts} grades={allG[kelas] || {}} kepData={allKep[kelas]} />}
     </div>
@@ -2296,7 +2308,7 @@ export default function App() {
           <Header user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser} />
           <div style={{ flex: 1, overflowY: "auto" }}>
             {user.role === "admin" && (
-              <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} setAllKep={setAllKep} />
+              <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} />
             )}
             {user.role === "guru" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} />}
             {user.role === "wk" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} />}
