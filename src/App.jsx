@@ -241,7 +241,7 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
   </div>
 </div>
 <div class=ttl>LAPORAN HASIL UJIAN AKHIR SEMESTER<br>TAHUN PELAJARAN 2025/2026</div>
-<table style="margin-bottom:4px;font-size:13px">
+<table style="margin-bottom:4px;font-size:15px">
   <tr><td style="border:none;width:50%">Nama &nbsp;&nbsp; : <b>${nm}</b></td><td style="border:none">Kelas &nbsp;&nbsp;&nbsp;: <b>${stripPi(cl.name)}</b></td></tr>
   <tr><td style="border:none">No. Induk : </td><td style="border:none">Semester : <b>Genap</b></td></tr>
 </table>
@@ -267,11 +267,15 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
       <tr><td class=c>3</td><td>Alpha</td><td class=c>${k.alpa ?? 0}</td></tr>
     </tbody>
   </table>
-  <div style="flex:1;border:1px solid #000;padding:8px;font-size:12px">
+  <div style="flex:1;border:1px solid #000;padding:8px;font-size:14px">
     <b>Keputusan :</b><br>Dengan memperhatikan hasil yang dicapai pada Semester II (Dua) ${keputusanText}
   </div>
 </div>
-<div style="font-size:12px;text-align:right;margin-bottom:4px">${dateStr}</div>
+<div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:14px">
+  <div class=sc></div>
+  <div class=sc></div>
+  <div class=sc style="text-align:left">${dateStr}</div>
+</div>
 <div class=sig>
   <div class=sc>Orang Tua / Wali,<div class=sl></div>_________________</div>
   <div class=sc>Wali Kelas,<div class=sl style="display:flex;justify-content:center;align-items:center">${qrDataUrl ? `<img src="${qrDataUrl}" style="width:58px;height:58px">` : ""}</div>${cl.wali || "_______________"}</div>
@@ -283,18 +287,18 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
   return `<!DOCTYPE html><html lang=id><head><meta charset=UTF-8><title>Raport — ${stripPi(cl.name)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;font-size:12.5px;background:#fff}
+body{font-family:Arial,sans-serif;font-size:14.5px;background:#fff}
 @page{size:A4 portrait;margin:12mm}
 @media print{.pb{page-break-after:always}}
 @media screen{.rpt{max-width:176mm;margin:10mm auto 20mm;padding:6mm;border:1px solid #ccc;background:white}}
-.hdr{text-align:center;border:2px solid #000;padding:6px 8px;margin-bottom:5px}
-.ttl{text-align:center;font-weight:bold;font-size:13px;margin:4px 0 5px}
-table{width:100%;border-collapse:collapse;margin-bottom:5px;font-size:12px}
+.hdr{text-align:center;border:2px solid #000;padding:6px 8px;margin-bottom:5px;font-size:12.5px}
+.ttl{text-align:center;font-weight:bold;font-size:15px;margin:4px 0 5px}
+table{width:100%;border-collapse:collapse;margin-bottom:5px;font-size:13.5px}
 th,td{border:1px solid #000;padding:3px 5px}
-th{background:#f0f0f0;text-align:center;font-size:11px}
+th{background:#f0f0f0;text-align:center;font-size:12.5px}
 .c{text-align:center}
 .tot{font-weight:bold;background:#fafafa}
-.sig{display:flex;justify-content:space-between;margin-top:6px;font-size:12px}
+.sig{display:flex;justify-content:space-between;margin-top:6px;font-size:14px}
 .sc{text-align:center;width:32%}
 .sl{height:58px;margin:6px 0}
 </style></head><body>
