@@ -240,6 +240,7 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
     Alamat : Dsn. Sukosari Desa Jatisari Kec. Jenggawah Kab. Jember 68171. E-Mail : mdtawwaliyahja@gmail.com
   </div>
 </div>
+<div style="height:1em"></div>
 <div class=ttl>LAPORAN HASIL UJIAN AKHIR SEMESTER<br>TAHUN PELAJARAN 2025/2026</div>
 <table style="margin-bottom:4px;font-size:15px">
   <tr><td style="border:none;width:50%">Nama &nbsp;&nbsp; : <b>${nm}</b></td><td style="border:none">Kelas &nbsp;&nbsp;&nbsp;: <b>${stripPi(cl.name)}</b></td></tr>
@@ -259,18 +260,21 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
   <tbody>${kprRows}</tbody>
 </table>
 <div style="display:flex;gap:8px;margin-bottom:6px">
-  <table style="flex:0 0 auto;width:160px">
-    <thead><tr><th>NO</th><th>ABSENSI</th><th>JUMLAH</th></tr></thead>
-    <tbody>
-      <tr><td class=c>1</td><td>Sakit</td><td class=c>${k.sakit ?? 0}</td></tr>
-      <tr><td class=c>2</td><td>Izin</td><td class=c>${k.izin ?? 0}</td></tr>
-      <tr><td class=c>3</td><td>Alpha</td><td class=c>${k.alpa ?? 0}</td></tr>
-    </tbody>
-  </table>
+  <div style="flex:0 0 160px;display:flex;flex-direction:column">
+    <table style="width:100%;height:100%;margin-bottom:0">
+      <thead><tr><th>NO</th><th>ABSENSI</th><th>JUMLAH</th></tr></thead>
+      <tbody>
+        <tr><td class=c>1</td><td>Sakit</td><td class=c>${k.sakit ?? 0}</td></tr>
+        <tr><td class=c>2</td><td>Izin</td><td class=c>${k.izin ?? 0}</td></tr>
+        <tr><td class=c>3</td><td>Alpha</td><td class=c>${k.alpa ?? 0}</td></tr>
+      </tbody>
+    </table>
+  </div>
   <div style="flex:1;border:1px solid #000;padding:8px;font-size:14px">
     <b>Keputusan :</b><br>Dengan memperhatikan hasil yang dicapai pada Semester II (Dua) ${keputusanText}
   </div>
 </div>
+<div style="height:3em"></div>
 <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:14px">
   <div class=sc></div>
   <div class=sc></div>
@@ -279,7 +283,7 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
 <div class=sig>
   <div class=sc>Orang Tua / Wali,<div class=sl></div>_________________</div>
   <div class=sc>Wali Kelas,<div class=sl style="display:flex;justify-content:center;align-items:center">${qrDataUrl ? `<img src="${qrDataUrl}" style="width:58px;height:58px">` : ""}</div>${cl.wali || "_______________"}</div>
-  <div class=sc>Kepala MDT ${mdtTitle},<div class=sl style="display:flex;justify-content:center;align-items:center">${qrDataUrl ? `<img src="${qrDataUrl}" style="width:58px;height:58px">` : ""}</div>${isWustho ? "KH. MOH. AL-FAIZ, LC., M.Ag" : "Faizurrofiq Lutfil Huda, S.E"}</div>
+  <div class=sc style="text-align:left">Kepala MDT ${mdtTitle},<div class=sl style="display:flex;justify-content:flex-start;align-items:center">${qrDataUrl ? `<img src="${qrDataUrl}" style="width:58px;height:58px">` : ""}</div>${isWustho ? "KH. MOH. AL-FAIZ, LC., M.Ag" : "Faizurrofiq Lutfil Huda, S.E"}</div>
 </div>
 </div>`;
   });
