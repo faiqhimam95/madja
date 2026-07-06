@@ -43,6 +43,7 @@ const DEFAULT_GM = {
 };
 
 const DEFAULT_ACCS = [
+  {u:"superadmin",p:"super123",role:"superadmin",name:"Super Admin"},
   {u:"admin",p:"admin123",role:"admin",name:"Administrator"},
   {u:"wali_aw1a",p:"wali123",role:"wk",name:"Aan Widianto, M.Pd",kelas:"aw1a"},
   {u:"wali_aw1b",p:"wali123",role:"wk",name:"Idris, S.Pd",kelas:"aw1b"},
@@ -66,6 +67,19 @@ const DEFAULT_ACCS = [
   {u:"guru_aswaja",p:"guru123",role:"guru",name:"Guru Aswaja"},
   {u:"guru_ilal",p:"guru123",role:"guru",name:"Guru I'lal"},
 ];
+
+const DEFAULT_SEM = { tipe: "genap", tahun: "2025/2026" };
+const semTahunShort = (tahun) => (tahun || "").replace(/20(\d{2})/g, "$1");
+const semLabel = (sem) => `${sem?.tipe === "ganjil" ? "Ganjil" : "Genap"} ${sem?.tahun || ""}`;
+const semLabelShort = (sem) => `${sem?.tipe === "ganjil" ? "Ganjil" : "Genap"} ${semTahunShort(sem?.tahun)}`;
+// Ganjil (mid-year) semesters don't decide promotion, so the next logical semester
+// after Ganjil is Genap of the same tahun ajaran; after Genap it's Ganjil of the next.
+function suggestNextSemester(sem) {
+  if (sem?.tipe === "ganjil") return { tipe: "genap", tahun: sem.tahun };
+  const m = (sem?.tahun || "").match(/(\d{4})\D+(\d{4})/);
+  if (m) return { tipe: "ganjil", tahun: `${parseInt(m[1]) + 1}/${parseInt(m[2]) + 1}` };
+  return { tipe: "ganjil", tahun: sem?.tahun || "" };
+}
 
 const KELAS_ORDER = ["aw1a","aw1b","aw2a","aw2b","aw3a","ws1","ws2"];
 const sortedKelas = (cl) => Object.keys(cl).sort((a, b) => {
@@ -156,7 +170,8 @@ function getKelasProgression(clName) {
   return { current: clName || "kelas ini", next: null };
 }
 
-function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataUrl = null) {
+function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataUrl = null, SEM = DEFAULT_SEM) {
+  const isGanjil = SEM?.tipe === "ganjil";
   const allIdx = st.map((_, i) => i);
   const allRata = allIdx.map((si) => {
     const vals = cl.mapel.map((m) => {
@@ -179,7 +194,7 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
   const pages = studentIndices.map((si, pgIdx) => {
     const nm = st[si] || "-";
     const kep = (kepData && kepData[si]) || {};
-    const DEF = { ibadah:"B", kedisiplinan:"B", kesopanan:"B", tgjawab:"B", kepedulian:"B", kebersihan:"B", sakit:0, izin:0, alpa:0, keputusan:"" };
+    const DEF = { ibadah:"B", kedisiplinan:"B", kesopanan:"B", tgjawab:"B", kepedulian:"B", kebersihan:"B", sakit:0, izin:0, alpa:0, keputusan:"", catatan:"" };
     const k = { ...DEF, ...kep };
 
     let rowNum = 0, jumlah = 0, countNilai = 0;
@@ -226,6 +241,10 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
       : k.keputusan === "tidak_naik"
       ? `maka Santri ini ditetapkan: <strong>Tinggal di Kelas: ${prog.current}</strong>`
       : "maka Santri ini ditetapkan: ________________";
+    const semRoman = isGanjil ? "I (Satu)" : "II (Dua)";
+    const keputusanBoxHTML = isGanjil
+      ? `<b>Catatan Wali Kelas :</b><br>${(k.catatan || "").trim() || "-"}`
+      : `<b>Keputusan :</b><br>Dengan memperhatikan hasil yang dicapai pada Semester ${semRoman} ${keputusanText}`;
 
     const isLast = pgIdx === studentIndices.length - 1;
 
@@ -241,10 +260,10 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
   </div>
 </div>
 <div style="height:1em"></div>
-<div class=ttl>LAPORAN HASIL UJIAN AKHIR SEMESTER<br>TAHUN PELAJARAN 2025/2026</div>
+<div class=ttl>LAPORAN HASIL UJIAN AKHIR SEMESTER<br>TAHUN PELAJARAN ${SEM.tahun}</div>
 <table style="margin-bottom:4px;font-size:15px">
   <tr><td style="border:none;width:50%">Nama &nbsp;&nbsp; : <b>${nm}</b></td><td style="border:none">Kelas &nbsp;&nbsp;&nbsp;: <b>${stripPi(cl.name)}</b></td></tr>
-  <tr><td style="border:none">No. Induk : </td><td style="border:none">Semester : <b>Genap</b></td></tr>
+  <tr><td style="border:none">No. Induk : </td><td style="border:none">Semester : <b>${isGanjil ? "Ganjil" : "Genap"}</b></td></tr>
 </table>
 <table>
   <thead><tr><th>NO</th><th>MATA PELAJARAN</th><th>JENIS UJIAN</th><th>KKM</th><th>NILAI</th><th>KETERANGAN</th></tr></thead>
@@ -271,7 +290,7 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
     </table>
   </div>
   <div style="flex:1;border:1px solid #000;padding:8px;font-size:14px">
-    <b>Keputusan :</b><br>Dengan memperhatikan hasil yang dicapai pada Semester II (Dua) ${keputusanText}
+    ${keputusanBoxHTML}
   </div>
 </div>
 <div style="height:3em"></div>
@@ -343,7 +362,7 @@ function RedBtn({ onClick, children, style = {} }) {
 const inputA = { width: "100%", padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "13px", boxSizing: "border-box" };
 const labelA = { display: "block", fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "5px" };
 
-function LoginPage({ onLogin, ACCS, GM, CL }) {
+function LoginPage({ onLogin, ACCS, GM, CL, SEM }) {
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [err, setErr] = useState("");
@@ -371,7 +390,7 @@ function LoginPage({ onLogin, ACCS, GM, CL }) {
     const a = ACCS.find((x) => x.u === u && x.p === p);
     if (!a) { setErr("Username atau password salah"); return; }
     setErr("");
-    if (a.role === "admin") { finalizeLogin(a, "admin"); return; }
+    if (a.role === "admin" || a.role === "superadmin") { finalizeLogin(a, a.role); return; }
     const wali = isWaliAcc(a);
     const guru = isGuruAcc(a, GM);
     if (wali && guru) { setChooseFor(a); return; }
@@ -391,7 +410,7 @@ function LoginPage({ onLogin, ACCS, GM, CL }) {
         <div style={{ fontSize: "44px", marginBottom: "6px" }}>🕌</div>
         <div style={{ fontSize: "20px", fontWeight: 500, marginBottom: "2px" }}>Sistem Nilai</div>
         <div style={{ fontSize: "15px", fontWeight: 500, opacity: 0.9, marginBottom: "2px" }}>MDT Jalaluddin Ar-Rumi</div>
-        <div style={{ fontSize: "12px", opacity: 0.65 }}>Semester Genap 2025/2026</div>
+        <div style={{ fontSize: "12px", opacity: 0.65 }}>Semester {semLabel(SEM)}</div>
       </div>
       <div style={{ background: "white", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "380px" }}>
         {chooseKelas ? (
@@ -459,9 +478,9 @@ function DemoSec({ title, accounts, onSel }) {
   );
 }
 
-function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser }) {
-  const rl = { admin: "#7c3aed", wk: "#0369a1", guru: "#b45309" };
-  const rn = { admin: "Administrator", wk: "Wali Kelas", guru: "Guru Mapel" };
+function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM }) {
+  const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309" };
+  const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel" };
   const [showAcct, setShowAcct] = useState(false);
   const [showSwitch, setShowSwitch] = useState(false);
   const [form, setForm] = useState({ u: "", p: "" });
@@ -473,7 +492,7 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser }) {
   const hasGuru = acc ? isGuruAcc(acc, GM) : false;
   // quick-switch only makes sense if this account has more than one "hat" to wear:
   // both wali kelas + guru mapel, or wali kelas of more than one kelas
-  const canSwitch = user.role !== "admin" && (hasWali && hasGuru || (user.role === "wk" && waliKelasAll.length > 1));
+  const canSwitch = user.role !== "admin" && user.role !== "superadmin" && (hasWali && hasGuru || (user.role === "wk" && waliKelasAll.length > 1));
 
   const switchToWali = (kelas) => {
     setUser((prev) => ({ ...prev, role: "wk", kelasAll: waliKelasAll, kelas }));
@@ -510,7 +529,7 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser }) {
       <div style={{ background: "#064e3b", color: "white", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontSize: "14px", fontWeight: 500 }}>🕌 MDT Jalaluddin Ar-Rumi</div>
-          <div style={{ fontSize: "11px", opacity: 0.7 }}>Sistem Nilai — Genap 2025/2026</div>
+          <div style={{ fontSize: "11px", opacity: 0.7 }}>Sistem Nilai — {semLabel(SEM)}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <div style={{ textAlign: "right" }}>
@@ -576,29 +595,68 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser }) {
   );
 }
 
-function SC({ icon, label, val }) {
+function SC({ icon, label, val, onClick, hint }) {
   return (
-    <div style={{ background: "white", borderRadius: "12px", padding: "14px", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: "10px" }}>
+    <div
+      onClick={onClick}
+      style={{ background: "white", borderRadius: "12px", padding: "14px", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: "10px", cursor: onClick ? "pointer" : "default", position: "relative" }}
+    >
       <div style={{ fontSize: "24px" }}>{icon}</div>
       <div>
         <div style={{ fontSize: "20px", fontWeight: 500, color: "#047857" }}>{val}</div>
         <div style={{ fontSize: "11px", color: "#9ca3af" }}>{label}</div>
       </div>
+      {onClick && <div style={{ position: "absolute", top: "8px", right: "10px", fontSize: "11px" }}>✏️</div>}
+      {hint && <div style={{ position: "absolute", bottom: "6px", right: "10px", fontSize: "9px", color: "#d1d5db" }}>{hint}</div>}
     </div>
   );
 }
 
-function AdminDashboard({ CL, ST, allG, allKep }) {
+function AdminDashboard({ CL, ST, allG, allKep, SEM, setSEM, setCL, setGM, setACCS, setAllG, setAllKep, isSuperAdmin }) {
   const ks = sortedKelas(CL);
   const tot = ks.reduce((s, k) => s + (ST[k] || []).length, 0);
   const group1 = ks.filter((k) => KELAS_ORDER.includes(k));
   const group2 = ks.filter((k) => !KELAS_ORDER.includes(k));
+  const isGanjil = SEM?.tipe === "ganjil";
+  const [showSemModal, setShowSemModal] = useState(false);
+  const suggested = suggestNextSemester(SEM);
+  const [semForm, setSemForm] = useState({ tipe: suggested.tipe, tahun: suggested.tahun });
+
+  const openSemModal = () => {
+    const sug = suggestNextSemester(SEM);
+    setSemForm({ tipe: sug.tipe, tahun: sug.tahun });
+    setShowSemModal(true);
+  };
+
+  const activateSemester = () => {
+    const tahun = semForm.tahun.trim();
+    if (!/^\d{4}\/\d{4}$/.test(tahun)) { alert('Format tahun ajaran harus "2026/2027"'); return; }
+    const newLabel = semLabel({ tipe: semForm.tipe, tahun });
+    const ok = window.confirm(
+      `PERINGATAN — TINDAKAN TIDAK BISA DIBATALKAN\n\n` +
+      `Mengaktifkan semester "${newLabel}" akan MENGHAPUS PERMANEN:\n` +
+      `• Semua nilai & Kepribadian/Absensi di semua kelas\n` +
+      `• Semua penugasan guru mapel\n` +
+      `• Semua akun Wali Kelas & Guru Mapel (login-nya akan hilang)\n\n` +
+      `Kelas, mata pelajaran, KKM, dan daftar siswa TETAP ada.\n\n` +
+      `Lanjutkan?`
+    );
+    if (!ok) return;
+    setSEM({ tipe: semForm.tipe, tahun });
+    setGM({});
+    setAllG({});
+    setAllKep({});
+    setACCS((prev) => prev.filter((a) => a.role === "admin" || a.role === "superadmin"));
+    setCL((prev) => { const n = {}; Object.keys(prev).forEach((k) => { n[k] = { ...prev[k], wali: "-" }; }); return n; });
+    setShowSemModal(false);
+  };
 
   const renderKelas = (key) => {
     const cl = CL[key], sts = ST[key] || [], gr = allG[key] || {};
     const kepData = allKep[key] || {};
     const naikCount = sts.reduce((n, _, si) => n + (kepData[si]?.keputusan === "naik" ? 1 : 0), 0);
     const tidakNaikCount = sts.reduce((n, _, si) => n + (kepData[si]?.keputusan === "tidak_naik" ? 1 : 0), 0);
+    const catatanCount = sts.reduce((n, _, si) => n + ((kepData[si]?.catatan || "").trim() ? 1 : 0), 0);
     const tot2 = sts.length * cl.mapel.length;
     let fill = 0;
     const mapelStats = cl.mapel.map((m) => {
@@ -646,8 +704,14 @@ function AdminDashboard({ CL, ST, allG, allKep }) {
           })}
         </div>
         <div style={{ display: "flex", gap: "10px", marginTop: "8px", fontSize: "10.5px", color: "#4b5563" }}>
-          <span>Naik Kelas: <strong style={{ color: "#065f46" }}>{naikCount}</strong></span>
-          <span>Tidak Naik: <strong style={{ color: "#991b1b" }}>{tidakNaikCount}</strong></span>
+          {isGanjil
+            ? <span>Catatan Wali Kelas terisi: <strong style={{ color: "#065f46" }}>{catatanCount}</strong> / {sts.length}</span>
+            : (
+              <>
+                <span>Naik Kelas: <strong style={{ color: "#065f46" }}>{naikCount}</strong></span>
+                <span>Tidak Naik: <strong style={{ color: "#991b1b" }}>{tidakNaikCount}</strong></span>
+              </>
+            )}
         </div>
       </div>
     );
@@ -658,7 +722,7 @@ function AdminDashboard({ CL, ST, allG, allKep }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "10px", marginBottom: "18px" }}>
         <SC icon="🕌" label="Total Kelas" val={ks.length} />
         <SC icon="👥" label="Total Santri" val={tot} />
-        <SC icon="📚" label="Semester" val="Genap 25/26" />
+        <SC icon="📚" label="Semester" val={semLabelShort(SEM)} onClick={isSuperAdmin ? openSemModal : undefined} hint={isSuperAdmin ? "klik untuk ganti" : undefined} />
       </div>
       <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
         <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb", fontSize: "14px", fontWeight: 500, color: "#111827" }}>📊 Rekap Per Kelas</div>
@@ -675,6 +739,43 @@ function AdminDashboard({ CL, ST, allG, allKep }) {
           </div>
         </div>
       </div>
+
+      {showSemModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: "16px" }}>
+          <div style={{ background: "white", borderRadius: "14px", padding: "20px", width: "100%", maxWidth: "440px", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ fontSize: "15px", fontWeight: 600, color: "#111827", marginBottom: "4px" }}>📚 Ganti Semester Aktif</div>
+            <p style={{ fontSize: "12px", color: "#6b7280", marginTop: 0, marginBottom: "14px" }}>Semester saat ini: <strong>{semLabel(SEM)}</strong></p>
+
+            <div style={{ marginBottom: "10px" }}>
+              <label style={labelA}>Tipe Semester</label>
+              <div style={{ display: "flex", gap: "6px" }}>
+                {[["ganjil", "Ganjil"], ["genap", "Genap"]].map(([v, l]) => (
+                  <button key={v} onClick={() => setSemForm((f) => ({ ...f, tipe: v }))} style={{ flex: 1, padding: "8px", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer", background: semForm.tipe === v ? "#064e3b" : "#e5e7eb", color: semForm.tipe === v ? "white" : "#374151" }}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ marginBottom: "14px" }}>
+              <label style={labelA}>Tahun Ajaran</label>
+              <input type="text" value={semForm.tahun} onChange={(e) => setSemForm((f) => ({ ...f, tahun: e.target.value }))} placeholder="2026/2027" style={inputA} />
+            </div>
+
+            <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "10px", padding: "12px", fontSize: "11.5px", color: "#991b1b", marginBottom: "14px" }}>
+              <strong>⚠️ Tindakan ini akan menghapus permanen:</strong>
+              <ul style={{ margin: "6px 0 0", paddingLeft: "18px" }}>
+                <li>Semua nilai & Kepribadian/Absensi di semua kelas</li>
+                <li>Semua penugasan guru mapel</li>
+                <li>Semua akun Wali Kelas & Guru Mapel</li>
+              </ul>
+              <p style={{ margin: "6px 0 0" }}>Kelas, mata pelajaran, KKM, dan daftar siswa tetap ada.</p>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px" }}>
+              <RedBtn onClick={activateSemester} style={{ flex: 1, padding: "9px" }}>🚨 Aktifkan & Reset</RedBtn>
+              <button onClick={() => setShowSemModal(false)} style={{ padding: "9px 16px", background: "#f3f4f6", color: "#4b5563", border: "none", borderRadius: "8px", fontSize: "13px", cursor: "pointer" }}>Batal</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1516,7 +1617,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
   );
 }
 
-function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep }) {
+function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, isSuperAdmin }) {
   const [tab, setTab] = useState("dashboard");
   const tabs = [
     ["dashboard", "📊 Dashboard"],
@@ -1534,7 +1635,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
           <button key={k} onClick={() => setTab(k)} style={{ flex: "1 1 auto", padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
         ))}
       </div>
-      {tab === "dashboard" && <AdminDashboard CL={CL} ST={ST} allG={allG} allKep={allKep} />}
+      {tab === "dashboard" && <AdminDashboard CL={CL} ST={ST} allG={allG} allKep={allKep} SEM={SEM} setSEM={setSEM} setCL={setCL} setGM={setGM} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} isSuperAdmin={isSuperAdmin} />}
       {tab === "kelas" && <AdminKelas CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} />}
       {tab === "wali" && <AdminWali ACCS={ACCS} setACCS={setACCS} CL={CL} setCL={setCL} GM={GM} setGM={setGM} />}
       {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} />}
@@ -1544,7 +1645,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
   );
 }
 
-function GuruView({ user, allG, setAllG, CL, ST }) {
+function GuruView({ user, allG, setAllG, CL, ST, SEM }) {
   const asgn = user.asgn || [];
   const kelOpts = useMemo(() => [...new Set(asgn.map((a) => a.k))], [asgn]);
   const [selK, setK] = useState(kelOpts[0] || "");
@@ -1584,7 +1685,7 @@ function GuruView({ user, allG, setAllG, CL, ST }) {
     <div style={{ padding: "16px", maxWidth: "900px", margin: "0 auto" }}>
       <div style={{ marginBottom: "14px" }}>
         <h2 style={{ fontSize: "17px", fontWeight: 500, color: "#111827", marginBottom: "2px" }}>Input Nilai UAS</h2>
-        <p style={{ fontSize: "12px", color: "#9ca3af" }}>Semester Genap 2025/2026 — Nilai Kumulatif = (Harian × 40%) + (UAS × 60%)</p>
+        <p style={{ fontSize: "12px", color: "#9ca3af" }}>Semester {semLabel(SEM)} — Nilai Kumulatif = (Harian × 40%) + (UAS × 60%)</p>
       </div>
       <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -1674,12 +1775,14 @@ function GuruView({ user, allG, setAllG, CL, ST }) {
   );
 }
 
-function LegerNilai({ kelas, grades, CL, ST, kep }) {
+function LegerNilai({ kelas, grades, CL, ST, kep, SEM }) {
   const cl = CL[kelas];
   const sts = ST[kelas] || [];
   const kepData = kep || {};
+  const isGanjil = SEM?.tipe === "ganjil";
   const naikCount = sts.reduce((n, _, si) => n + (kepData[si]?.keputusan === "naik" ? 1 : 0), 0);
   const tidakNaikCount = sts.reduce((n, _, si) => n + (kepData[si]?.keputusan === "tidak_naik" ? 1 : 0), 0);
+  const catatanCount = sts.reduce((n, _, si) => n + ((kepData[si]?.catatan || "").trim() ? 1 : 0), 0);
   const matrix = sts.map((nm, si) => {
     const sc = {};
     cl.mapel.forEach((m) => {
@@ -1714,8 +1817,14 @@ function LegerNilai({ kelas, grades, CL, ST, kep }) {
           <span>Rata kelas: <strong style={{ color: "#047857" }}>{avg}</strong></span>
           <span>Tertinggi: <strong>{mx}</strong></span>
           <span>Terendah: <strong>{mn}</strong></span>
-          <span>Naik Kelas: <strong style={{ color: "#065f46" }}>{naikCount}</strong></span>
-          <span>Tidak Naik: <strong style={{ color: "#991b1b" }}>{tidakNaikCount}</strong></span>
+          {isGanjil
+            ? <span>Catatan terisi: <strong style={{ color: "#065f46" }}>{catatanCount}</strong> / {sts.length}</span>
+            : (
+              <>
+                <span>Naik Kelas: <strong style={{ color: "#065f46" }}>{naikCount}</strong></span>
+                <span>Tidak Naik: <strong style={{ color: "#991b1b" }}>{tidakNaikCount}</strong></span>
+              </>
+            )}
         </div>
       </div>
       <div style={{ overflowX: "auto" }}>
@@ -1770,11 +1879,12 @@ function LegerNilai({ kelas, grades, CL, ST, kep }) {
   );
 }
 
-function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades }) {
+function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM }) {
   const sts = ST[kelas] || [];
   const cl = CL[kelas];
   const [lk, setLk] = useState({});
   const [saved, setSaved] = useState(false);
+  const isGanjil = SEM?.tipe === "ganjil";
   const KF = ["ibadah", "kedisiplinan", "kesopanan", "tgjawab", "kepedulian", "kebersihan"];
   const KL = ["Ibadah", "Kedisiplinan", "Kesopanan", "Tg. Jawab", "Kepedulian", "Kebersihan"];
   const GR = ["A", "B", "C", "D"];
@@ -1786,8 +1896,8 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades }) {
       const saved2 = ex[i];
       const suggested = belowKkmCount(cl, grades, i) >= 3 ? "tidak_naik" : "naik";
       init[i] = saved2
-        ? { ibadah: "B", kedisiplinan: "B", kesopanan: "B", tgjawab: "B", kepedulian: "B", kebersihan: "B", sakit: 0, izin: 0, alpa: 0, ...saved2, keputusan: saved2.keputusan || suggested }
-        : { ibadah: "B", kedisiplinan: "B", kesopanan: "B", tgjawab: "B", kepedulian: "B", kebersihan: "B", sakit: 0, izin: 0, alpa: 0, keputusan: suggested };
+        ? { ibadah: "B", kedisiplinan: "B", kesopanan: "B", tgjawab: "B", kepedulian: "B", kebersihan: "B", sakit: 0, izin: 0, alpa: 0, catatan: "", ...saved2, keputusan: saved2.keputusan || suggested }
+        : { ibadah: "B", kedisiplinan: "B", kesopanan: "B", tgjawab: "B", kepedulian: "B", kebersihan: "B", sakit: 0, izin: 0, alpa: 0, catatan: "", keputusan: suggested };
     });
     setLk(init);
   }, [kelas]); // eslint-disable-line
@@ -1812,7 +1922,11 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades }) {
     <div style={{ background: "white", borderRadius: "12px", overflow: "hidden", border: "1px solid #e5e7eb" }}>
       <div style={{ padding: "10px 14px", background: "#ecfdf5", borderBottom: "1px solid #e5e7eb" }}>
         <div style={{ fontSize: "14px", fontWeight: 500, color: "#065f46" }}>Kepribadian & Absensi</div>
-        <div style={{ fontSize: "11px", color: "#047857", marginTop: "2px" }}>A = Sangat Baik • B = Baik • C = Cukup • D = Kurang. Saran kenaikan kelas otomatis "Tidak Naik" jika ≥3 mapel di bawah KKM — tetap bisa diubah manual.</div>
+        <div style={{ fontSize: "11px", color: "#047857", marginTop: "2px" }}>
+          {isGanjil
+            ? "A = Sangat Baik • B = Baik • C = Cukup • D = Kurang. Semester Ganjil tidak menentukan kenaikan kelas — isi Catatan Wali Kelas bebas untuk tiap santri."
+            : "A = Sangat Baik • B = Baik • C = Cukup • D = Kurang. Saran kenaikan kelas otomatis \"Tidak Naik\" jika ≥3 mapel di bawah KKM — tetap bisa diubah manual."}
+        </div>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: "11px", minWidth: "100%" }}>
@@ -1825,7 +1939,7 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades }) {
               <th style={{ ...thK, background: "#1d6a4f", minWidth: "46px" }}>Izin</th>
               <th style={{ ...thK, background: "#1d6a4f", minWidth: "46px" }}>Alpa</th>
               <th style={{ ...thK, background: "#1d6a4f", minWidth: "52px" }}>{"< KKM"}</th>
-              <th style={{ ...thK, background: "#1d6a4f", minWidth: "110px" }}>Kenaikan Kelas</th>
+              <th style={{ ...thK, background: "#1d6a4f", minWidth: isGanjil ? "180px" : "110px" }}>{isGanjil ? "Catatan Wali Kelas" : "Kenaikan Kelas"}</th>
             </tr>
           </thead>
           <tbody>
@@ -1854,11 +1968,17 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades }) {
                   ))}
                   <td style={{ ...tdK, fontWeight: 500, color: failCount >= 3 ? "#dc2626" : "#6b7280" }}>{failCount}</td>
                   <td style={tdK}>
-                    <select value={k.keputusan || "naik"} onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], keputusan: e.target.value } }))}
-                      style={{ width: "100px", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px", fontWeight: 500, ...keputusanSt(k.keputusan || "naik") }}>
-                      <option value="naik">Naik Kelas</option>
-                      <option value="tidak_naik">Tidak Naik</option>
-                    </select>
+                    {isGanjil ? (
+                      <input type="text" value={k.catatan || ""} onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], catatan: e.target.value } }))}
+                        placeholder="Catatan bebas..."
+                        style={{ width: "170px", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px" }} />
+                    ) : (
+                      <select value={k.keputusan || "naik"} onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], keputusan: e.target.value } }))}
+                        style={{ width: "100px", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px", fontWeight: 500, ...keputusanSt(k.keputusan || "naik") }}>
+                        <option value="naik">Naik Kelas</option>
+                        <option value="tidak_naik">Tidak Naik</option>
+                      </select>
+                    )}
                   </td>
                 </tr>
               );
@@ -1874,15 +1994,17 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades }) {
   );
 }
 
-function buildExcelWorkbook(kelas, cl, sts, grades, kepData) {
+function buildExcelWorkbook(kelas, cl, sts, grades, kepData, SEM = DEFAULT_SEM) {
   const wb = XLSX.utils.book_new();
+  const isGanjil = SEM?.tipe === "ganjil";
+  const semTipeLabel = isGanjil ? "Ganjil" : "Genap";
   const SCHOOL1 = "MADRASAH DINIYAH TAKMILIYAH (MDT) PONDOK PESANTREN JALALUDDIN AR-RUMI";
   const SCHOOL2 = "JATISARI JENGGAWAH JEMBER";
   const SCHOOL3 = "Dsn. Sukosari Desa Jatisari Kec. Jenggawah Kab. Jember 68171  |  mdtawwaliyahja@gmail.com";
-  const KEPALA = isWustho ? "KH. MOH. AL-FAIZ, LC., M.Ag" : "Faizurrofiq Lutfil Huda, S.E";
   const isWustho = kelas.startsWith("ws");
+  const KEPALA = isWustho ? "KH. MOH. AL-FAIZ, LC., M.Ag" : "Faizurrofiq Lutfil Huda, S.E";
   const mdtTitle = isWustho ? "Wustho" : "Awwaliyah";
-  const DEF_KEP = { ibadah:"B", kedisiplinan:"B", kesopanan:"B", tgjawab:"B", kepedulian:"B", kebersihan:"B", sakit:0, izin:0, alpa:0, keputusan:"" };
+  const DEF_KEP = { ibadah:"B", kedisiplinan:"B", kesopanan:"B", tgjawab:"B", kepedulian:"B", kebersihan:"B", sakit:0, izin:0, alpa:0, keputusan:"", catatan:"" };
   const exProg = getKelasProgression(cl.name);
   const kputLabel = (kep) => kep.keputusan === "naik" ? `Naik ke Kelas: ${exProg.next || "Jenjang Berikutnya"}` : kep.keputusan === "tidak_naik" ? `Tinggal di Kelas: ${exProg.current}` : "-";
 
@@ -1918,7 +2040,7 @@ function buildExcelWorkbook(kelas, cl, sts, grades, kepData) {
       [SCHOOL2, ...Array(NC - 1).fill("")],
       [SCHOOL3, ...Array(NC - 1).fill("")],
       bl(),
-      [`LEGER NILAI UJIAN AKHIR SEMESTER GENAP — TAHUN PELAJARAN 2025/2026`, ...Array(NC - 1).fill("")],
+      [`LEGER NILAI UJIAN AKHIR SEMESTER ${semTipeLabel.toUpperCase()} — TAHUN PELAJARAN ${SEM?.tahun || ""}`, ...Array(NC - 1).fill("")],
       [`Kelas: ${cl.name}`, "", `Wali Kelas: ${cl.wali || "-"}`, ...Array(NC - 3).fill("")],
       bl(),
       ["No", "Nama Santri", ...mapel, "Jumlah", "Rata-rata", "< KKM", "Peringkat"],
@@ -1951,7 +2073,7 @@ function buildExcelWorkbook(kelas, cl, sts, grades, kepData) {
       [`REKAPITULASI KEPRIBADIAN SANTRI & ABSENSI`, ...Array(NC - 1).fill("")],
       [`Kelas: ${cl.name}`, "", `Wali Kelas: ${cl.wali || "-"}`, ...Array(NC - 3).fill("")],
       Array(NC).fill(""),
-      ["No", "Nama Santri", "Ibadah", "Kedisiplinan", "Kesopanan", "Tg.Jawab", "Kepedulian", "Kebersihan", "Sakit", "Izin", "Alpha", "Keputusan"],
+      ["No", "Nama Santri", "Ibadah", "Kedisiplinan", "Kesopanan", "Tg.Jawab", "Kepedulian", "Kebersihan", "Sakit", "Izin", "Alpha", isGanjil ? "Catatan Wali Kelas" : "Keputusan"],
       ...sts.map((nm, si) => {
         const k = { ...DEF_KEP, ...((kepData || {})[si] || {}) };
         return [
@@ -1960,7 +2082,7 @@ function buildExcelWorkbook(kelas, cl, sts, grades, kepData) {
           `${k.kesopanan} - ${JENIS_LABEL[k.kesopanan] || ""}`, `${k.tgjawab} - ${JENIS_LABEL[k.tgjawab] || ""}`,
           `${k.kepedulian} - ${JENIS_LABEL[k.kepedulian] || ""}`, `${k.kebersihan} - ${JENIS_LABEL[k.kebersihan] || ""}`,
           k.sakit ?? 0, k.izin ?? 0, k.alpa ?? 0,
-          kputLabel(k),
+          isGanjil ? (k.catatan || "-") : kputLabel(k),
         ];
       }),
     ];
@@ -1990,12 +2112,12 @@ function buildExcelWorkbook(kelas, cl, sts, grades, kepData) {
       // school header
       aoa.push([SCHOOL1, "", "", "", "", ""]); span(aoa.length - 1, 0, NC - 1);
       aoa.push([SCHOOL2, "", "", "", "", ""]); span(aoa.length - 1, 0, NC - 1);
-      aoa.push(["LAPORAN HASIL UJIAN AKHIR SEMESTER | TAHUN PELAJARAN 2025/2026", "", "", "", "", ""]); span(aoa.length - 1, 0, NC - 1);
+      aoa.push([`LAPORAN HASIL UJIAN AKHIR SEMESTER | TAHUN PELAJARAN ${SEM?.tahun || ""}`, "", "", "", "", ""]); span(aoa.length - 1, 0, NC - 1);
       aoa.push(["", "", "", "", "", ""]);
 
       // student info
       aoa.push([`Nama     : ${nm}`, "", "", `Kelas    : ${cl.name}`, "", ""]); span(aoa.length - 1, 0, 2); span(aoa.length - 1, 3, NC - 1);
-      aoa.push(["No. Induk: -", "", "", "Semester : Genap", "", ""]); span(aoa.length - 1, 0, 2); span(aoa.length - 1, 3, NC - 1);
+      aoa.push(["No. Induk: -", "", "", `Semester : ${semTipeLabel}`, "", ""]); span(aoa.length - 1, 0, 2); span(aoa.length - 1, 3, NC - 1);
       aoa.push(["", "", "", "", "", ""]);
 
       // subject table
@@ -2045,8 +2167,10 @@ function buildExcelWorkbook(kelas, cl, sts, grades, kepData) {
       aoa.push(["ABSENSI", "", "", "", "", ""]); span(aoa.length - 1, 0, NC - 1);
       aoa.push(["Sakit", kep.sakit ?? 0, "Izin", kep.izin ?? 0, "Alpha", kep.alpa ?? 0]);
       aoa.push(["", "", "", "", "", ""]);
-      const kputText = kep.keputusan === "naik" || kep.keputusan === "tidak_naik" ? kputLabel(kep) : "_______________";
-      aoa.push([`Keputusan: ${kputText}`, "", "", "", "", ""]); span(aoa.length - 1, 0, NC - 1);
+      const kputLine = isGanjil
+        ? `Catatan Wali Kelas: ${(kep.catatan || "").trim() || "-"}`
+        : `Keputusan: ${kep.keputusan === "naik" || kep.keputusan === "tidak_naik" ? kputLabel(kep) : "_______________"}`;
+      aoa.push([kputLine, "", "", "", "", ""]); span(aoa.length - 1, 0, NC - 1);
       aoa.push(["", "", "", "", "", ""]);
 
       // signature
@@ -2070,7 +2194,7 @@ function buildExcelWorkbook(kelas, cl, sts, grades, kepData) {
   return wb;
 }
 
-function RaportTab({ kelas, cl, sts, grades, kepData }) {
+function RaportTab({ kelas, cl, sts, grades, kepData, SEM }) {
   const [selIdx, setSelIdx] = useState("all");
   const [printing, setPrinting] = useState(false);
 
@@ -2085,7 +2209,7 @@ function RaportTab({ kelas, cl, sts, grades, kepData }) {
       const qrText = `Wali: ${cl.wali || "-"} | Kepala: ${kepalaName}`;
       qrDataUrl = await QRCode.toDataURL(qrText, { width: 88, margin: 1 });
     } catch { /* no QR if library fails */ }
-    const html = buildRaportHTML(indices, kelas, cl, sts, grades, kepData, qrDataUrl);
+    const html = buildRaportHTML(indices, kelas, cl, sts, grades, kepData, qrDataUrl, SEM);
     const win = window.open("", "_blank");
     setPrinting(false);
     if (!win) { alert("Pop-up diblokir browser. Izinkan pop-up untuk situs ini lalu coba lagi."); return; }
@@ -2095,8 +2219,8 @@ function RaportTab({ kelas, cl, sts, grades, kepData }) {
 
   const handleExport = () => {
     if (sts.length === 0) { alert("Belum ada data siswa di kelas ini."); return; }
-    const wb = buildExcelWorkbook(kelas, cl, sts, grades, kepData);
-    XLSX.writeFile(wb, `Raport_${cl.sh || kelas}_Genap_2025-2026.xlsx`);
+    const wb = buildExcelWorkbook(kelas, cl, sts, grades, kepData, SEM);
+    XLSX.writeFile(wb, `Raport_${cl.sh || kelas}_${SEM?.tipe === "ganjil" ? "Ganjil" : "Genap"}_${(SEM?.tahun || "").replace("/", "-")}.xlsx`);
   };
 
   return (
@@ -2129,7 +2253,7 @@ function RaportTab({ kelas, cl, sts, grades, kepData }) {
   );
 }
 
-function WkView({ user, allG, allKep, setAllKep, CL, ST }) {
+function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM }) {
   const [tab, setTab] = useState("leger");
   const kelasAll = (user.kelasAll && user.kelasAll.length > 0) ? user.kelasAll : [user.kelas].filter(Boolean);
   const activeKelas = user.kelas || kelasAll[0];
@@ -2144,7 +2268,7 @@ function WkView({ user, allG, allKep, setAllKep, CL, ST }) {
       <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
         <div>
           <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>{cl.name}</h2>
-          <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>Wali Kelas: {user.name} — Semester Genap 2025/2026</p>
+          <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>Wali Kelas: {user.name} — Semester {semLabel(SEM)}</p>
         </div>
         <div style={{ textAlign: "right", fontSize: "12px", opacity: 0.8 }}>
           <div>Santri: <strong>{sts.length}</strong></div>
@@ -2156,9 +2280,9 @@ function WkView({ user, allG, allKep, setAllKep, CL, ST }) {
           <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
         ))}
       </div>
-      {tab === "leger" && <LegerNilai kelas={kelas} grades={allG[kelas] || {}} CL={CL} ST={ST} kep={allKep[kelas]} />}
-      {tab === "kepribadian" && <KepribadianView kelas={kelas} allKep={allKep} setAllKep={setAllKep} ST={ST} CL={CL} grades={allG[kelas] || {}} />}
-      {tab === "raport" && <RaportTab kelas={kelas} cl={cl} sts={sts} grades={allG[kelas] || {}} kepData={allKep[kelas]} />}
+      {tab === "leger" && <LegerNilai kelas={kelas} grades={allG[kelas] || {}} CL={CL} ST={ST} kep={allKep[kelas]} SEM={SEM} />}
+      {tab === "kepribadian" && <KepribadianView kelas={kelas} allKep={allKep} setAllKep={setAllKep} ST={ST} CL={CL} grades={allG[kelas] || {}} SEM={SEM} />}
+      {tab === "raport" && <RaportTab kelas={kelas} cl={cl} sts={sts} grades={allG[kelas] || {}} kepData={allKep[kelas]} SEM={SEM} />}
     </div>
   );
 }
@@ -2302,24 +2426,34 @@ export default function App() {
   const [user, setUser] = usePersistedState("user", null);
   const [allG, setAllG, allGReady] = useRemoteState("allG", {});
   const [allKep, setAllKep, allKepReady] = useRemoteState("allKep", {});
+  const [SEM, setSEM, semReady] = useRemoteState("SEM", DEFAULT_SEM);
 
-  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady)) {
+  // One-time self-healing migration: make sure a Super Admin account always exists,
+  // even on deployments whose ACCS data predates this role.
+  useEffect(() => {
+    if (!accsReady) return;
+    if (!ACCS.some((a) => a.role === "superadmin")) {
+      setACCS((prev) => [...prev, { u: "superadmin", p: "super123", role: "superadmin", name: "Super Admin" }]);
+    }
+  }, [accsReady]); // eslint-disable-line
+
+  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady)) {
     return <LoadingScreen />;
   }
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "system-ui,-apple-system,sans-serif", background: "#f9fafb" }}>
       {!user ? (
-        <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} />
+        <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} SEM={SEM} />
       ) : (
         <>
-          <Header user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser} />
+          <Header user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser} SEM={SEM} />
           <div style={{ flex: 1, overflowY: "auto" }}>
-            {user.role === "admin" && (
-              <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} />
+            {(user.role === "admin" || user.role === "superadmin") && (
+              <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} isSuperAdmin={user.role === "superadmin"} />
             )}
-            {user.role === "guru" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} />}
-            {user.role === "wk" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} />}
+            {user.role === "guru" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} />}
+            {user.role === "wk" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} />}
           </div>
         </>
       )}
