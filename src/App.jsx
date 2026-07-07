@@ -81,6 +81,22 @@ function suggestNextSemester(sem) {
   return { tipe: "ganjil", tahun: sem?.tahun || "" };
 }
 
+// Institution identity — editable by Super Admin, feeds the header, login page, and
+// every cetak raport / export Excel letterhead so it never needs a code change again.
+const DEFAULT_LEMBAGA = {
+  logo: null, // data URL (resized client-side on upload) or null to fall back to /kop.png
+  namaSingkat: "MDT Jalaluddin Ar-Rumi",
+  namaArab: "المدرسة الدينيَّة جلال الدين الرّومي",
+  namaLembaga: "MADRASAH DINIYAH TAKMILIYAH (MDT)",
+  namaPondok: "PONDOK PESANTREN JALALUDDIN AR-RUMI",
+  lokasi: "JATISARI JENGGAWAH JEMBER",
+  alamat: "Dsn. Sukosari Desa Jatisari Kec. Jenggawah Kab. Jember 68171",
+  email: "mdtawwaliyahja@gmail.com",
+  kepalaAwwaliyah: "Faizurrofiq Lutfil Huda, S.E",
+  kepalaWustho: "KH. MOH. AL-FAIZ, LC., M.Ag",
+};
+const kepalaOf = (lembaga, isWustho) => (isWustho ? lembaga.kepalaWustho : lembaga.kepalaAwwaliyah) || "-";
+
 const KELAS_ORDER = ["aw1a","aw1b","aw2a","aw2b","aw3a","ws1","ws2"];
 const sortedKelas = (cl) => Object.keys(cl).sort((a, b) => {
   const ai = KELAS_ORDER.indexOf(a), bi = KELAS_ORDER.indexOf(b);
@@ -170,7 +186,7 @@ function getKelasProgression(clName) {
   return { current: clName || "kelas ini", next: null };
 }
 
-function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataUrl = null, SEM = DEFAULT_SEM) {
+function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataUrl = null, SEM = DEFAULT_SEM, LEMBAGA = DEFAULT_LEMBAGA) {
   const isGanjil = SEM?.tipe === "ganjil";
   const allIdx = st.map((_, i) => i);
   const allRata = allIdx.map((si) => {
@@ -250,13 +266,13 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
 
     return `<div class="rpt${isLast ? "" : " pb"}">
 <div class=hdr style="position:relative;padding:6px 8px;text-align:center">
-  <img src="${window.location.origin}/kop.png" style="position:absolute;left:6px;bottom:28px;width:80px;height:80px;object-fit:contain">
-  <div style="font-size:18px;font-family:'Diwani Bent','Traditional Arabic',Amiri,Arial,sans-serif;letter-spacing:1px;margin-bottom:2px">المدرسة الدينيَّة جلال الدين الرّومي</div>
-  <b style="font-size:13px;letter-spacing:0.5px">MADRASAH DINIYAH TAKMILIYAH (MDT)</b><br>
-  <b style="font-size:16px">PONDOK PESANTREN JALALUDDIN AR-RUMI</b><br>
-  <b style="font-size:13px">JATISARI JENGGAWAH JEMBER</b>
+  <img src="${LEMBAGA.logo || `${window.location.origin}/kop.png`}" style="position:absolute;left:6px;bottom:28px;width:80px;height:80px;object-fit:contain">
+  <div style="font-size:18px;font-family:'Diwani Bent','Traditional Arabic',Amiri,Arial,sans-serif;letter-spacing:1px;margin-bottom:2px">${LEMBAGA.namaArab}</div>
+  <b style="font-size:13px;letter-spacing:0.5px">${LEMBAGA.namaLembaga}</b><br>
+  <b style="font-size:16px">${LEMBAGA.namaPondok}</b><br>
+  <b style="font-size:13px">${LEMBAGA.lokasi}</b>
   <div style="border-top:1.5px solid #000;margin-top:4px;padding-top:3px;font-size:11px">
-    Alamat : Dsn. Sukosari Desa Jatisari Kec. Jenggawah Kab. Jember 68171. E-Mail : mdtawwaliyahja@gmail.com
+    Alamat : ${LEMBAGA.alamat}. E-Mail : ${LEMBAGA.email}
   </div>
 </div>
 <div style="height:1em"></div>
@@ -302,7 +318,7 @@ function buildRaportHTML(studentIndices, kelas, cl, st, grades, kepData, qrDataU
 <div class=sig>
   <div class=sc>Orang Tua / Wali,<div class=sl></div>_________________</div>
   <div class=sc>Wali Kelas,<div class=sl style="display:flex;justify-content:center;align-items:center">${qrDataUrl ? `<img src="${qrDataUrl}" style="width:58px;height:58px">` : ""}</div>${cl.wali || "_______________"}</div>
-  <div class=sc style="text-align:left">Kepala MDT ${mdtTitle},<div class=sl style="display:flex;justify-content:flex-start;align-items:center">${qrDataUrl ? `<img src="${qrDataUrl}" style="width:58px;height:58px">` : ""}</div>${isWustho ? "KH. MOH. AL-FAIZ, LC., M.Ag" : "Faizurrofiq Lutfil Huda, S.E"}</div>
+  <div class=sc style="text-align:left">Kepala MDT ${mdtTitle},<div class=sl style="display:flex;justify-content:flex-start;align-items:center">${qrDataUrl ? `<img src="${qrDataUrl}" style="width:58px;height:58px">` : ""}</div>${kepalaOf(LEMBAGA, isWustho)}</div>
 </div>
 </div>`;
   });
@@ -362,7 +378,7 @@ function RedBtn({ onClick, children, style = {} }) {
 const inputA = { width: "100%", padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "13px", boxSizing: "border-box" };
 const labelA = { display: "block", fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "5px" };
 
-function LoginPage({ onLogin, ACCS, GM, CL, SEM }) {
+function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA }) {
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [err, setErr] = useState("");
@@ -407,9 +423,9 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM }) {
   return (
     <div style={{ minHeight: "100vh", background: "#064e3b", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px", fontFamily: "system-ui,-apple-system,sans-serif" }}>
       <div style={{ textAlign: "center", marginBottom: "20px", color: "white" }}>
-        <div style={{ fontSize: "44px", marginBottom: "6px" }}>🕌</div>
+        {LEMBAGA.logo ? <img src={LEMBAGA.logo} alt="Logo" style={{ width: "56px", height: "56px", objectFit: "contain", marginBottom: "6px" }} /> : <div style={{ fontSize: "44px", marginBottom: "6px" }}>🕌</div>}
         <div style={{ fontSize: "20px", fontWeight: 500, marginBottom: "2px" }}>Sistem Nilai</div>
-        <div style={{ fontSize: "15px", fontWeight: 500, opacity: 0.9, marginBottom: "2px" }}>MDT Jalaluddin Ar-Rumi</div>
+        <div style={{ fontSize: "15px", fontWeight: 500, opacity: 0.9, marginBottom: "2px" }}>{LEMBAGA.namaSingkat}</div>
         <div style={{ fontSize: "12px", opacity: 0.65 }}>Semester {semLabel(SEM)}</div>
       </div>
       <div style={{ background: "white", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "380px" }}>
@@ -478,7 +494,7 @@ function DemoSec({ title, accounts, onSel }) {
   );
 }
 
-function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM }) {
+function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LEMBAGA, archives, onOpenArchive }) {
   const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309" };
   const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel" };
   const [showAcct, setShowAcct] = useState(false);
@@ -527,11 +543,17 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM }) 
   return (
     <div style={{ position: "relative", flexShrink: 0 }}>
       <div style={{ background: "#064e3b", color: "white", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <div style={{ fontSize: "14px", fontWeight: 500 }}>🕌 MDT Jalaluddin Ar-Rumi</div>
-          <div style={{ fontSize: "11px", opacity: 0.7 }}>Sistem Nilai — {semLabel(SEM)}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {LEMBAGA.logo && <img src={LEMBAGA.logo} alt="Logo" style={{ width: "26px", height: "26px", objectFit: "contain" }} />}
+          <div>
+            <div style={{ fontSize: "14px", fontWeight: 500 }}>{LEMBAGA.logo ? "" : "🕌 "}{LEMBAGA.namaSingkat}</div>
+            <div style={{ fontSize: "11px", opacity: 0.7 }}>Sistem Nilai — {semLabel(SEM)}</div>
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {archives && Object.keys(archives).length > 0 && (
+            <button onClick={onOpenArchive} title="Lihat data semester lalu (hanya lihat)" style={{ padding: "5px 10px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>🗄️ Arsip</button>
+          )}
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</div>
             <div style={{ display: "inline-block", background: rl[user.role], padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 500, marginTop: "2px" }}>
@@ -612,7 +634,127 @@ function SC({ icon, label, val, onClick, hint }) {
   );
 }
 
-function AdminDashboard({ CL, ST, allG, allKep, SEM, setSEM, setCL, setGM, setACCS, setAllG, setAllKep, isSuperAdmin }) {
+// Downscales an uploaded logo to a reasonable max size before storing as a data URL,
+// so the (already sizeable) app_state JSON blob doesn't balloon from a multi-MB photo.
+function resizeImageFile(file, maxDim = 320) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function AdminLembaga({ LEMBAGA, setLEMBAGA }) {
+  const [form, setForm] = useState(LEMBAGA);
+  const [saved, setSaved] = useState(false);
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const onLogoChange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { alert("File harus berupa gambar"); return; }
+    try {
+      const dataUrl = await resizeImageFile(file);
+      setForm((f) => ({ ...f, logo: dataUrl }));
+    } catch {
+      alert("Gagal memuat gambar, coba file lain");
+    }
+    e.target.value = "";
+  };
+
+  const save = () => {
+    setLEMBAGA(form);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  const fieldsRow1 = [
+    ["namaSingkat", "Nama Singkat (header & login)"],
+    ["namaLembaga", "Nama Lembaga"],
+    ["namaPondok", "Nama Pondok Pesantren"],
+    ["lokasi", "Lokasi (baris ke-3 kop)"],
+  ];
+  const fieldsRow2 = [
+    ["alamat", "Alamat"],
+    ["email", "E-Mail"],
+  ];
+  const fieldsKepala = [
+    ["kepalaAwwaliyah", "Nama Kepala MDT Awwaliyah"],
+    ["kepalaWustho", "Nama Kepala MDT Wustho"],
+  ];
+
+  return (
+    <div style={{ maxWidth: "640px" }}>
+      <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>
+        Identitas ini dipakai di header, halaman login, cetak raport, dan export Excel di seluruh aplikasi.
+      </p>
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", marginBottom: "14px" }}>
+        <label style={labelA}>Logo Lembaga</label>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "4px" }}>
+          <div style={{ width: "64px", height: "64px", borderRadius: "8px", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fafafa" }}>
+            {form.logo ? <img src={form.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <span style={{ fontSize: "28px" }}>🕌</span>}
+          </div>
+          <div>
+            <input type="file" accept="image/*" onChange={onLogoChange} style={{ fontSize: "12px" }} />
+            {form.logo && (
+              <button onClick={() => setForm((f) => ({ ...f, logo: null }))} style={{ display: "block", marginTop: "6px", padding: "4px 10px", background: "#fef2f2", color: "#991b1b", border: "none", borderRadius: "6px", fontSize: "11px", cursor: "pointer" }}>Hapus logo (pakai default)</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", marginBottom: "14px", display: "grid", gap: "10px" }}>
+        {fieldsRow1.map(([key, lbl]) => (
+          <div key={key}>
+            <label style={labelA}>{lbl}</label>
+            <input type="text" value={form[key] || ""} onChange={set(key)} style={inputA} />
+          </div>
+        ))}
+        <div>
+          <label style={labelA}>Nama Arab (kop, opsional)</label>
+          <input type="text" value={form.namaArab || ""} onChange={set("namaArab")} dir="rtl" style={inputA} />
+        </div>
+        {fieldsRow2.map(([key, lbl]) => (
+          <div key={key}>
+            <label style={labelA}>{lbl}</label>
+            <input type="text" value={form[key] || ""} onChange={set(key)} style={inputA} />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", marginBottom: "14px", display: "grid", gap: "10px" }}>
+        <p style={{ fontSize: "11px", color: "#9ca3af", margin: "0 0 2px" }}>Nama kepala dipilih otomatis di raport sesuai jenjang kelas (Awwaliyah/Wustho).</p>
+        {fieldsKepala.map(([key, lbl]) => (
+          <div key={key}>
+            <label style={labelA}>{lbl}</label>
+            <input type="text" value={form[key] || ""} onChange={set(key)} style={inputA} />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+        <GreenBtn onClick={save}>💾 Simpan Identitas</GreenBtn>
+        {saved && <span style={{ color: "#065f46", fontSize: "12px", fontWeight: 500 }}>✓ Tersimpan</span>}
+      </div>
+    </div>
+  );
+}
+
+function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, setSEM, GM, setGM, ACCS, setACCS, archives, setArchives, isSuperAdmin }) {
   const ks = sortedKelas(CL);
   const tot = ks.reduce((s, k) => s + (ST[k] || []).length, 0);
   const group1 = ks.filter((k) => KELAS_ORDER.includes(k));
@@ -634,7 +776,8 @@ function AdminDashboard({ CL, ST, allG, allKep, SEM, setSEM, setCL, setGM, setAC
     const newLabel = semLabel({ tipe: semForm.tipe, tahun });
     const ok = window.confirm(
       `PERINGATAN — TINDAKAN TIDAK BISA DIBATALKAN\n\n` +
-      `Mengaktifkan semester "${newLabel}" akan MENGHAPUS PERMANEN:\n` +
+      `Semester "${semLabel(SEM)}" akan diarsipkan (bisa dilihat lagi lewat tombol 🗄️ Arsip, tapi tidak bisa diubah).\n\n` +
+      `Mengaktifkan semester "${newLabel}" akan MENGHAPUS dari data aktif:\n` +
       `• Semua nilai & Kepribadian/Absensi di semua kelas\n` +
       `• Semua penugasan guru mapel\n` +
       `• Semua akun Wali Kelas & Guru Mapel (login-nya akan hilang)\n\n` +
@@ -642,6 +785,11 @@ function AdminDashboard({ CL, ST, allG, allKep, SEM, setSEM, setCL, setGM, setAC
       `Lanjutkan?`
     );
     if (!ok) return;
+    const archiveKey = `${SEM.tipe}-${(SEM.tahun || "").replace(/\D+/g, "-")}-${Date.now()}`;
+    setArchives((prev) => ({
+      ...prev,
+      [archiveKey]: { tipe: SEM.tipe, tahun: SEM.tahun, archivedAt: new Date().toISOString(), CL, ST, GM, ACCS, allG, allKep },
+    }));
     setSEM({ tipe: semForm.tipe, tahun });
     setGM({});
     setAllG({});
@@ -1617,7 +1765,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
   );
 }
 
-function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, isSuperAdmin }) {
+function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, archives, setArchives, LEMBAGA, setLEMBAGA, isSuperAdmin }) {
   const [tab, setTab] = useState("dashboard");
   const tabs = [
     ["dashboard", "📊 Dashboard"],
@@ -1626,6 +1774,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
     ["siswa", "🧑‍🎓 Data Siswa"],
     ["mapel", "📚 Mata Pelajaran"],
     ["guru", "🧑‍🏫 Penugasan Guru"],
+    ...(isSuperAdmin ? [["identitas", "🏛️ Identitas Lembaga"]] : []),
   ];
   return (
     <div style={{ padding: "16px", maxWidth: "1100px", margin: "0 auto" }}>
@@ -1635,12 +1784,13 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
           <button key={k} onClick={() => setTab(k)} style={{ flex: "1 1 auto", padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
         ))}
       </div>
-      {tab === "dashboard" && <AdminDashboard CL={CL} ST={ST} allG={allG} allKep={allKep} SEM={SEM} setSEM={setSEM} setCL={setCL} setGM={setGM} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} isSuperAdmin={isSuperAdmin} />}
+      {tab === "dashboard" && <AdminDashboard CL={CL} setCL={setCL} ST={ST} allG={allG} allKep={allKep} SEM={SEM} setSEM={setSEM} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} archives={archives} setArchives={setArchives} isSuperAdmin={isSuperAdmin} />}
       {tab === "kelas" && <AdminKelas CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} />}
       {tab === "wali" && <AdminWali ACCS={ACCS} setACCS={setACCS} CL={CL} setCL={setCL} GM={GM} setGM={setGM} />}
       {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} />}
       {tab === "mapel" && <AdminMapel CL={CL} setCL={setCL} setGM={setGM} />}
       {tab === "guru" && <AdminPenugasan ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} CL={CL} setCL={setCL} />}
+      {tab === "identitas" && isSuperAdmin && <AdminLembaga LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} />}
     </div>
   );
 }
@@ -1879,7 +2029,7 @@ function LegerNilai({ kelas, grades, CL, ST, kep, SEM }) {
   );
 }
 
-function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM }) {
+function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM, readOnly = false }) {
   const sts = ST[kelas] || [];
   const cl = CL[kelas];
   const [lk, setLk] = useState({});
@@ -1894,7 +2044,7 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM }) {
     const init = {};
     sts.forEach((_, i) => {
       const saved2 = ex[i];
-      const suggested = belowKkmCount(cl, grades, i) >= 3 ? "tidak_naik" : "naik";
+      const suggested = readOnly ? "naik" : (belowKkmCount(cl, grades, i) >= 3 ? "tidak_naik" : "naik");
       init[i] = saved2
         ? { ibadah: "B", kedisiplinan: "B", kesopanan: "B", tgjawab: "B", kepedulian: "B", kebersihan: "B", sakit: 0, izin: 0, alpa: 0, catatan: "", ...saved2, keputusan: saved2.keputusan || suggested }
         : { ibadah: "B", kedisiplinan: "B", kesopanan: "B", tgjawab: "B", kepedulian: "B", kebersihan: "B", sakit: 0, izin: 0, alpa: 0, catatan: "", keputusan: suggested };
@@ -1953,7 +2103,7 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM }) {
                   <td style={{ ...tdK, width: "140px", position: "sticky", left: "32px", textAlign: "left", background: bg, fontWeight: 500, whiteSpace: "nowrap", zIndex: 1 }}>{nm}</td>
                   {KF.map((key) => (
                     <td key={key} style={tdK}>
-                      <select value={k[key] || "B"} onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], [key]: e.target.value } }))}
+                      <select disabled={readOnly} value={k[key] || "B"} onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], [key]: e.target.value } }))}
                         style={{ width: "42px", padding: "3px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px", fontWeight: 500, ...grSt(k[key] || "B") }}>
                         {GR.map((g) => <option key={g} value={g}>{g}</option>)}
                       </select>
@@ -1961,7 +2111,7 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM }) {
                   ))}
                   {["sakit", "izin", "alpa"].map((key) => (
                     <td key={key} style={tdK}>
-                      <input type="number" min={0} max={999} value={k[key] ?? 0}
+                      <input type="number" disabled={readOnly} min={0} max={999} value={k[key] ?? 0}
                         onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], [key]: parseInt(e.target.value) || 0 } }))}
                         style={{ width: "38px", padding: "3px 4px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px", textAlign: "center" }} />
                     </td>
@@ -1969,11 +2119,11 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM }) {
                   <td style={{ ...tdK, fontWeight: 500, color: failCount >= 3 ? "#dc2626" : "#6b7280" }}>{failCount}</td>
                   <td style={tdK}>
                     {isGanjil ? (
-                      <input type="text" value={k.catatan || ""} onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], catatan: e.target.value } }))}
+                      <input type="text" disabled={readOnly} value={k.catatan || ""} onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], catatan: e.target.value } }))}
                         placeholder="Catatan bebas..."
                         style={{ width: "170px", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px" }} />
                     ) : (
-                      <select value={k.keputusan || "naik"} onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], keputusan: e.target.value } }))}
+                      <select disabled={readOnly} value={k.keputusan || "naik"} onChange={(e) => setLk((p) => ({ ...p, [i]: { ...p[i], keputusan: e.target.value } }))}
                         style={{ width: "100px", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px", fontWeight: 500, ...keputusanSt(k.keputusan || "naik") }}>
                         <option value="naik">Naik Kelas</option>
                         <option value="tidak_naik">Tidak Naik</option>
@@ -1987,22 +2137,28 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM }) {
         </table>
       </div>
       <div style={{ padding: "10px 14px", background: "#f9fafb", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        {saved ? <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#065f46", fontSize: "12px", fontWeight: 500, padding: "4px 10px", background: "#d1fae5", borderRadius: "20px" }}>✓ Tersimpan</span> : <span />}
-        <GreenBtn onClick={doSave}>💾 Simpan Data</GreenBtn>
+        {readOnly ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#92400e", fontSize: "12px", fontWeight: 500, padding: "4px 10px", background: "#fef3c7", borderRadius: "20px" }}>🔒 Mode Arsip — Hanya Lihat</span>
+        ) : (
+          <>
+            {saved ? <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#065f46", fontSize: "12px", fontWeight: 500, padding: "4px 10px", background: "#d1fae5", borderRadius: "20px" }}>✓ Tersimpan</span> : <span />}
+            <GreenBtn onClick={doSave}>💾 Simpan Data</GreenBtn>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function buildExcelWorkbook(kelas, cl, sts, grades, kepData, SEM = DEFAULT_SEM) {
+function buildExcelWorkbook(kelas, cl, sts, grades, kepData, SEM = DEFAULT_SEM, LEMBAGA = DEFAULT_LEMBAGA) {
   const wb = XLSX.utils.book_new();
   const isGanjil = SEM?.tipe === "ganjil";
   const semTipeLabel = isGanjil ? "Ganjil" : "Genap";
-  const SCHOOL1 = "MADRASAH DINIYAH TAKMILIYAH (MDT) PONDOK PESANTREN JALALUDDIN AR-RUMI";
-  const SCHOOL2 = "JATISARI JENGGAWAH JEMBER";
-  const SCHOOL3 = "Dsn. Sukosari Desa Jatisari Kec. Jenggawah Kab. Jember 68171  |  mdtawwaliyahja@gmail.com";
+  const SCHOOL1 = `${LEMBAGA.namaLembaga} ${LEMBAGA.namaPondok}`;
+  const SCHOOL2 = LEMBAGA.lokasi;
+  const SCHOOL3 = `${LEMBAGA.alamat}  |  ${LEMBAGA.email}`;
   const isWustho = kelas.startsWith("ws");
-  const KEPALA = isWustho ? "KH. MOH. AL-FAIZ, LC., M.Ag" : "Faizurrofiq Lutfil Huda, S.E";
+  const KEPALA = kepalaOf(LEMBAGA, isWustho);
   const mdtTitle = isWustho ? "Wustho" : "Awwaliyah";
   const DEF_KEP = { ibadah:"B", kedisiplinan:"B", kesopanan:"B", tgjawab:"B", kepedulian:"B", kebersihan:"B", sakit:0, izin:0, alpa:0, keputusan:"", catatan:"" };
   const exProg = getKelasProgression(cl.name);
@@ -2194,7 +2350,7 @@ function buildExcelWorkbook(kelas, cl, sts, grades, kepData, SEM = DEFAULT_SEM) 
   return wb;
 }
 
-function RaportTab({ kelas, cl, sts, grades, kepData, SEM }) {
+function RaportTab({ kelas, cl, sts, grades, kepData, SEM, LEMBAGA }) {
   const [selIdx, setSelIdx] = useState("all");
   const [printing, setPrinting] = useState(false);
 
@@ -2205,11 +2361,11 @@ function RaportTab({ kelas, cl, sts, grades, kepData, SEM }) {
     const indices = selIdx === "all" ? allIdx : [parseInt(selIdx)];
     let qrDataUrl = null;
     try {
-      const kepalaName = kelas.startsWith("ws") ? "KH. MOH. AL-FAIZ, LC., M.Ag" : "Faizurrofiq Lutfil Huda, S.E";
+      const kepalaName = kepalaOf(LEMBAGA, kelas.startsWith("ws"));
       const qrText = `Wali: ${cl.wali || "-"} | Kepala: ${kepalaName}`;
       qrDataUrl = await QRCode.toDataURL(qrText, { width: 88, margin: 1 });
     } catch { /* no QR if library fails */ }
-    const html = buildRaportHTML(indices, kelas, cl, sts, grades, kepData, qrDataUrl, SEM);
+    const html = buildRaportHTML(indices, kelas, cl, sts, grades, kepData, qrDataUrl, SEM, LEMBAGA);
     const win = window.open("", "_blank");
     setPrinting(false);
     if (!win) { alert("Pop-up diblokir browser. Izinkan pop-up untuk situs ini lalu coba lagi."); return; }
@@ -2219,7 +2375,7 @@ function RaportTab({ kelas, cl, sts, grades, kepData, SEM }) {
 
   const handleExport = () => {
     if (sts.length === 0) { alert("Belum ada data siswa di kelas ini."); return; }
-    const wb = buildExcelWorkbook(kelas, cl, sts, grades, kepData, SEM);
+    const wb = buildExcelWorkbook(kelas, cl, sts, grades, kepData, SEM, LEMBAGA);
     XLSX.writeFile(wb, `Raport_${cl.sh || kelas}_${SEM?.tipe === "ganjil" ? "Ganjil" : "Genap"}_${(SEM?.tahun || "").replace("/", "-")}.xlsx`);
   };
 
@@ -2253,7 +2409,7 @@ function RaportTab({ kelas, cl, sts, grades, kepData, SEM }) {
   );
 }
 
-function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM }) {
+function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM, LEMBAGA }) {
   const [tab, setTab] = useState("leger");
   const kelasAll = (user.kelasAll && user.kelasAll.length > 0) ? user.kelasAll : [user.kelas].filter(Boolean);
   const activeKelas = user.kelas || kelasAll[0];
@@ -2282,7 +2438,76 @@ function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM }) {
       </div>
       {tab === "leger" && <LegerNilai kelas={kelas} grades={allG[kelas] || {}} CL={CL} ST={ST} kep={allKep[kelas]} SEM={SEM} />}
       {tab === "kepribadian" && <KepribadianView kelas={kelas} allKep={allKep} setAllKep={setAllKep} ST={ST} CL={CL} grades={allG[kelas] || {}} SEM={SEM} />}
-      {tab === "raport" && <RaportTab kelas={kelas} cl={cl} sts={sts} grades={allG[kelas] || {}} kepData={allKep[kelas]} SEM={SEM} />}
+      {tab === "raport" && <RaportTab kelas={kelas} cl={cl} sts={sts} grades={allG[kelas] || {}} kepData={allKep[kelas]} SEM={SEM} LEMBAGA={LEMBAGA} />}
+    </div>
+  );
+}
+
+function ArchiveView({ archives, LEMBAGA, onClose }) {
+  const archiveKeys = Object.keys(archives).sort((a, b) => (archives[b].archivedAt || "").localeCompare(archives[a].archivedAt || ""));
+  const [selArchive, setSelArchive] = useState(archiveKeys[0] || "");
+  const arc = archives[selArchive];
+  const ks = arc ? sortedKelas(arc.CL) : [];
+  const [selKelas, setSelKelas] = useState(ks[0] || "");
+  const [tab, setTab] = useState("leger");
+
+  useEffect(() => {
+    const a = archives[selArchive];
+    const ks2 = a ? sortedKelas(a.CL) : [];
+    setSelKelas(ks2[0] || "");
+    setTab("leger");
+  }, [selArchive]); // eslint-disable-line
+
+  if (archiveKeys.length === 0 || !arc) {
+    return (
+      <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
+        <p style={{ fontSize: "13px", color: "#9ca3af" }}>Belum ada arsip semester.</p>
+        <button onClick={onClose} style={{ padding: "7px 14px", background: "#f3f4f6", color: "#4b5563", border: "none", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>← Kembali</button>
+      </div>
+    );
+  }
+
+  const cl = arc.CL[selKelas];
+  const sts = arc.ST[selKelas] || [];
+  const semObj = { tipe: arc.tipe, tahun: arc.tahun };
+
+  return (
+    <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
+      <div style={{ background: "#78350f", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+        <div>
+          <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>🗄️ Arsip — {cl?.name || selKelas}</h2>
+          <p style={{ margin: 0, fontSize: "12px", opacity: 0.85 }}>Semester {semLabel(semObj)} — mode hanya lihat, tidak bisa diubah</p>
+        </div>
+        <button onClick={onClose} style={{ padding: "7px 14px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>← Kembali</button>
+      </div>
+
+      <div style={{ display: "flex", gap: "10px", marginBottom: "14px", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={labelA}>Semester Arsip</label>
+          <select value={selArchive} onChange={(e) => setSelArchive(e.target.value)} style={inputA}>
+            {archiveKeys.map((k) => <option key={k} value={k}>{semLabel({ tipe: archives[k].tipe, tahun: archives[k].tahun })}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={labelA}>Kelas</label>
+          <select value={selKelas} onChange={(e) => setSelKelas(e.target.value)} style={inputA}>
+            {ks.map((k) => <option key={k} value={k}>{arc.CL[k]?.name} ({arc.CL[k]?.sh})</option>)}
+          </select>
+        </div>
+      </div>
+
+      {cl && (
+        <>
+          <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px" }}>
+            {[["leger", "📋 Leger Nilai"], ["kepribadian", "⭐ Kepribadian & Absensi"], ["raport", "🖨️ Cetak Raport"]].map(([k, lbl]) => (
+              <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#92400e" : "#6b7280" }}>{lbl}</button>
+            ))}
+          </div>
+          {tab === "leger" && <LegerNilai kelas={selKelas} grades={arc.allG[selKelas] || {}} CL={arc.CL} ST={arc.ST} kep={arc.allKep[selKelas]} SEM={semObj} />}
+          {tab === "kepribadian" && <KepribadianView kelas={selKelas} allKep={arc.allKep} setAllKep={() => {}} ST={arc.ST} CL={arc.CL} grades={arc.allG[selKelas] || {}} SEM={semObj} readOnly />}
+          {tab === "raport" && <RaportTab kelas={selKelas} cl={cl} sts={sts} grades={arc.allG[selKelas] || {}} kepData={arc.allKep[selKelas]} SEM={semObj} LEMBAGA={LEMBAGA} />}
+        </>
+      )}
     </div>
   );
 }
@@ -2427,6 +2652,9 @@ export default function App() {
   const [allG, setAllG, allGReady] = useRemoteState("allG", {});
   const [allKep, setAllKep, allKepReady] = useRemoteState("allKep", {});
   const [SEM, setSEM, semReady] = useRemoteState("SEM", DEFAULT_SEM);
+  const [LEMBAGA, setLEMBAGA, lembagaReady] = useRemoteState("LEMBAGA", DEFAULT_LEMBAGA);
+  const [archives, setArchives, archivesReady] = useRemoteState("archives", {});
+  const [viewingArchive, setViewingArchive] = useState(false);
 
   // One-time self-healing migration: make sure a Super Admin account always exists,
   // even on deployments whose ACCS data predates this role.
@@ -2437,23 +2665,29 @@ export default function App() {
     }
   }, [accsReady]); // eslint-disable-line
 
-  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady)) {
+  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && archivesReady)) {
     return <LoadingScreen />;
   }
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "system-ui,-apple-system,sans-serif", background: "#f9fafb" }}>
       {!user ? (
-        <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} SEM={SEM} />
+        <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} SEM={SEM} LEMBAGA={LEMBAGA} />
       ) : (
         <>
-          <Header user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser} SEM={SEM} />
+          <Header user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser} SEM={SEM} LEMBAGA={LEMBAGA} archives={archives} onOpenArchive={() => setViewingArchive(true)} />
           <div style={{ flex: 1, overflowY: "auto" }}>
-            {(user.role === "admin" || user.role === "superadmin") && (
-              <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} isSuperAdmin={user.role === "superadmin"} />
+            {viewingArchive ? (
+              <ArchiveView archives={archives} LEMBAGA={LEMBAGA} onClose={() => setViewingArchive(false)} />
+            ) : (
+              <>
+                {(user.role === "admin" || user.role === "superadmin") && (
+                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} isSuperAdmin={user.role === "superadmin"} />
+                )}
+                {user.role === "guru" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} />}
+                {user.role === "wk" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} />}
+              </>
             )}
-            {user.role === "guru" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} />}
-            {user.role === "wk" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} />}
           </div>
         </>
       )}
