@@ -186,10 +186,17 @@ const DEFAULT_JADWAL = {
   guru: DEFAULT_JADWAL_GURU,
   mapel: DEFAULT_JADWAL_MAPEL,
   // Per-guru teaching constraints, keyed by kode guru. kelasBoleh: [] means unrestricted
-  // (may teach any kelas); tidakBisa: { [hari]: { [jamKode]: true } } marks specific
-  // day/period slots the guru is unavailable for. Empty by default — nobody is restricted
-  // until Super Admin sets it in the "Ketentuan Guru" panel.
+  // (may teach any kelas); mapelPerKelas: { [kelasKode]: [kodeMapel,...] } lists which
+  // subject(s) that guru teaches in a given kelas — used to auto-fill/restrict the mapel
+  // dropdown in the Jadwal grid once a guru is picked. tidakBisa: { [hari]: { [jamKode]:
+  // true } } marks specific day/period slots the guru is unavailable for. Empty by
+  // default — nobody is restricted until Super Admin sets it in "Ketentuan Guru".
   ketentuan: {},
+  // Duty-teacher (guru piket) rosters, kept separate for Putra/Putri since the two run
+  // as independent schedules. Shape: { [hari]: { I: nama, II: nama } } — free-text name,
+  // not tied to the guru kode list (piket duty can fall to staff outside JADWAL.guru).
+  piketPutra: {},
+  piketPutri: {},
   // Jadwal Putri grid — same hari/jam shape as `grid`, but keyed by the live CL kelas
   // kode from jadwalPutriKelas() instead of the fixed JADWAL_KELAS list. Starts empty;
   // there's no source data for these classes yet, unlike the seeded Putra grid below.
@@ -260,6 +267,22 @@ function jadwalRenameGuruKode(JADWAL, oldKode, newKode) {
     if (newKode) ketentuan[newKode] = val;
   }
   return { grid, gridPutri, ketentuan };
+}
+// Renames (or, when newKode is "", deletes) a mapel kode inside every guru's
+// mapelPerKelas — companion to jadwalRenameKode, which only handles the grids.
+function jadwalRenameMapelInKetentuan(ketentuan, oldKode, newKode) {
+  const next = {};
+  Object.keys(ketentuan || {}).forEach((guruKode) => {
+    const entry = ketentuan[guruKode];
+    if (!entry?.mapelPerKelas) { next[guruKode] = entry; return; }
+    const mapelPerKelas = {};
+    Object.keys(entry.mapelPerKelas).forEach((kelasKode) => {
+      const list = (entry.mapelPerKelas[kelasKode] || []).map((m) => (m === oldKode ? newKode : m)).filter(Boolean);
+      mapelPerKelas[kelasKode] = list;
+    });
+    next[guruKode] = { ...entry, mapelPerKelas };
+  });
+  return next;
 }
 // Flags two kinds of scheduling clashes across every hari/jam/kelas cell, in BOTH the
 // Jadwal Putra table (JADWAL_KELAS/JADWAL.grid) and the Jadwal Putri table (putriKelas/
@@ -557,7 +580,10 @@ ${pages.join("\n")}
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Shared table-HTML builder for both the Jadwal Putra and Jadwal Putri tables.
-function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf) {
+// opts.useNames: print guru/mapel as their full name instead of kode (Jadwal Putri
+// doesn't get a legend to decode codes with, so it must be self-explanatory).
+function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf, opts = {}) {
+  const { useNames = false, guruByKode = {}, mapelByKode = {} } = opts;
   if (!kelasList || kelasList.length === 0) {
     return `<p style="font-size:11px;color:#6b7280;font-style:italic">Belum ada kelas Putri di CL (tambahkan lewat tab Kelas).</p>`;
   }
@@ -571,7 +597,13 @@ function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf) {
         const cell = grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
         const conflict = conflicts[`${layer}|${hari}|${jam.kode}|${k.kode}`];
         const style = `background:${colorOf(cell.g)}${conflict ? ";outline:2px solid #dc2626;outline-offset:-2px" : ""}`;
-        return `<td class="c" style="${style}" title="${conflict ? conflict.join(" | ").replace(/"/g, "'") : ""}"><b>${cell.g || "-"}</b>${cell.m ? " " + cell.m : ""}${conflict ? " ⚠" : ""}</td>`;
+        const title = conflict ? conflict.join(" | ").replace(/"/g, "'") : "";
+        if (useNames) {
+          const gText = cell.g ? (guruByKode[cell.g]?.nama || cell.g) : "-";
+          const mText = cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "";
+          return `<td class="c" style="${style}" title="${title}"><div style="font-size:8px;line-height:1.15"><b>${gText}</b>${mText ? "<br>" + mText : ""}${conflict ? " ⚠" : ""}</div></td>`;
+        }
+        return `<td class="c" style="${style}" title="${title}"><b>${cell.g || "-"}</b>${cell.m ? " " + cell.m : ""}${conflict ? " ⚠" : ""}</td>`;
       }).join("")}
     </tr>`).join("")).join("");
   return `<table>
@@ -583,12 +615,28 @@ function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf) {
   </table>`;
 }
 
-function buildJadwalHTML(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, putriKelas = []) {
+// Guru Piket table: always name-only (hari, Jam I, Jam II, nama) — piket duty isn't
+// necessarily one of the coded subject teachers, so there's no code to show anyway.
+function jadwalPiketTableHTML(piketData) {
+  const rows = JADWAL_HARI.map((hari) => `<tr><td class="c b">${hari}</td><td class="c">${piketData?.[hari]?.I || "-"}</td><td class="c">${piketData?.[hari]?.II || "-"}</td></tr>`).join("");
+  return `<table><thead><tr><th colspan="3">GURU PIKET</th></tr><tr><th>Hari</th><th>Jam I</th><th>Jam II</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function buildJadwalHTML(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, putriKelas = [], autoprint = true) {
   const semTipeLabel = SEM?.tipe === "ganjil" ? "Ganjil" : "Genap";
   const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
   const conflicts = computeJadwalConflicts(JADWAL, putriKelas);
+  const guruByKode = Object.fromEntries(JADWAL.guru.map((g) => [g.kode, g]));
+  const mapelByKode = Object.fromEntries(JADWAL.mapel.map((m) => [m.kode, m]));
 
-  const guruRows = JADWAL.guru.map((g) => `<tr><td class="c b" style="background:${colorOf(g.kode)}">${g.kode}</td><td>${g.nama}</td></tr>`).join("");
+  // Legend only lists guru who actually appear somewhere in Jadwal Putra, so it stays
+  // a useful decoder rather than listing every guru regardless of whether they're used.
+  const usedGuruKodes = new Set();
+  JADWAL_HARI.forEach((hari) => JADWAL_JAM.forEach((jam) => JADWAL_KELAS.forEach((k) => {
+    const g = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode]?.g;
+    if (g) usedGuruKodes.add(g);
+  })));
+  const guruRows = JADWAL.guru.filter((g) => usedGuruKodes.has(g.kode)).map((g) => `<tr><td class="c b" style="background:${colorOf(g.kode)}">${g.kode}</td><td>${g.nama}</td></tr>`).join("");
   const mapelRows = JADWAL.mapel.map((m) => `<tr><td class="c b">${m.kode}</td><td>${m.nama}</td></tr>`).join("");
   const conflictNote = Object.keys(conflicts).length > 0 ? `<div class="sub" style="color:#dc2626;font-weight:bold">⚠ ${Object.keys(conflicts).length} sel bentrok terdeteksi — lihat sel bergaris merah</div>` : "";
 
@@ -606,24 +654,32 @@ th,td{border:1px solid #000;padding:2px 3px;font-size:9.5px}
 th{background:#e5e7eb;text-align:center}
 .c{text-align:center}
 .b{font-weight:bold}
-.legend{display:flex;gap:16px}
-.legend table{width:auto;flex:1}
+.row{display:flex;gap:16px;align-items:flex-start}
+.row>table{width:auto;flex:1}
+.row>.grow{flex:3}
+.row>.grow table{width:100%}
 </style></head><body>
 <div class="wrap">
   <div class="ttl">JADWAL MATA PELAJARAN SEMESTER ${semTipeLabel.toUpperCase()}</div>
   <div class="ttl">${(LEMBAGA.namaLembaga || "").toUpperCase()} ${LEMBAGA.namaPondok || ""}</div>
   <div class="sub">TAHUN DIRASAH ${SEM?.tahun || ""}</div>
   ${conflictNote}
+
   <div class="sect">JADWAL PUTRA</div>
   ${jadwalTableHTML("putra", JADWAL_KELAS, JADWAL.grid, conflicts, colorOf)}
-  <div class="sect">JADWAL PUTRI</div>
-  ${jadwalTableHTML("putri", putriKelas, JADWAL.gridPutri, conflicts, colorOf)}
-  <div class="legend">
+  <div class="row">
     <table><thead><tr><th colspan="2">KODE GURU</th></tr></thead><tbody>${guruRows}</tbody></table>
     <table><thead><tr><th colspan="2">KODE MAPEL</th></tr></thead><tbody>${mapelRows}</tbody></table>
+    ${jadwalPiketTableHTML(JADWAL.piketPutra)}
+  </div>
+
+  <div class="sect">JADWAL PUTRI</div>
+  <div class="row">
+    <div class="grow">${jadwalTableHTML("putri", putriKelas, JADWAL.gridPutri, conflicts, colorOf, { useNames: true, guruByKode, mapelByKode })}</div>
+    ${jadwalPiketTableHTML(JADWAL.piketPutri)}
   </div>
 </div>
-<script>window.onload=()=>{window.print()}<\/script>
+${autoprint ? `<script>window.onload=()=>{window.print()}<\/script>` : ""}
 </body></html>`;
 }
 
@@ -696,6 +752,17 @@ function buildJadwalExcel(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, 
   const ws2 = XLSX.utils.aoa_to_sheet(legendAoa);
   ws2["!cols"] = [{ wch: 10 }, { wch: 34 }];
   XLSX.utils.book_append_sheet(wb, ws2, "Kode Guru & Mapel");
+
+  const piketAoa = (piketData) => [
+    ["Hari", "Jam I", "Jam II"],
+    ...JADWAL_HARI.map((hari) => [hari, piketData?.[hari]?.I || "", piketData?.[hari]?.II || ""]),
+  ];
+  const ws3 = XLSX.utils.aoa_to_sheet(piketAoa(JADWAL.piketPutra));
+  ws3["!cols"] = [{ wch: 10 }, { wch: 20 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, ws3, "Piket Putra");
+  const ws4 = XLSX.utils.aoa_to_sheet(piketAoa(JADWAL.piketPutri));
+  ws4["!cols"] = [{ wch: 10 }, { wch: 20 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, ws4, "Piket Putri");
 
   return wb;
 }
@@ -2119,6 +2186,37 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
   );
 }
 
+// Small hari x Jam I/II name-entry grid for the duty-teacher roster. Free text, not
+// tied to JADWAL.guru — piket duty can fall to staff outside the coded teacher list.
+function PiketEditor({ title, piket, onChange }) {
+  return (
+    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "10px", marginTop: "10px", maxWidth: "360px" }}>
+      <div style={{ fontSize: "12px", fontWeight: 600, color: "#111827", marginBottom: "8px" }}>{title}</div>
+      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "11px" }}>
+        <thead>
+          <tr>
+            <th style={{ padding: "4px 6px", textAlign: "left", color: "#6b7280", fontWeight: 500 }}>Hari</th>
+            <th style={{ padding: "4px 6px", color: "#6b7280", fontWeight: 500 }}>Jam I</th>
+            <th style={{ padding: "4px 6px", color: "#6b7280", fontWeight: 500 }}>Jam II</th>
+          </tr>
+        </thead>
+        <tbody>
+          {JADWAL_HARI.map((hari) => (
+            <tr key={hari}>
+              <td style={{ padding: "3px 6px", fontWeight: 500 }}>{hari}</td>
+              {JADWAL_JAM.map((jam) => (
+                <td key={jam.kode} style={{ padding: "3px 4px" }}>
+                  <input type="text" value={piket?.[hari]?.[jam.kode] || ""} onChange={(e) => onChange(hari, jam.kode, e.target.value)} placeholder="Nama" style={{ width: "100%", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "5px", fontSize: "11px", boxSizing: "border-box" }} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   const [tab, setTab] = useState("jadwal");
   const [newGuruKode, setNewGuruKode] = useState("");
@@ -2176,13 +2274,33 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   const setKelasBoleh = (kode, kelasKode, checked) => {
     setJADWAL((p) => {
       const ketentuan = { ...(p.ketentuan || {}) };
-      const cur = ketentuan[kode] || { kelasBoleh: [], tidakBisa: {} };
+      const cur = ketentuan[kode] || { kelasBoleh: [], tidakBisa: {}, mapelPerKelas: {} };
       const kelasBoleh = checked
         ? [...new Set([...(cur.kelasBoleh || []), kelasKode])]
         : (cur.kelasBoleh || []).filter((x) => x !== kelasKode);
-      ketentuan[kode] = { ...cur, kelasBoleh };
+      // unchecking a kelas drops its mapel picks too, so they don't linger unseen
+      const mapelPerKelas = { ...(cur.mapelPerKelas || {}) };
+      if (!checked) delete mapelPerKelas[kelasKode];
+      ketentuan[kode] = { ...cur, kelasBoleh, mapelPerKelas };
       return { ...p, ketentuan };
     });
+  };
+  // Which mapel a guru teaches in a given kelas — used both to display in Ketentuan
+  // Guru and to auto-fill/restrict the mapel dropdown in the Jadwal grid.
+  const toggleMapelPerKelas = (kode, kelasKode, mapelKode, checked) => {
+    setJADWAL((p) => {
+      const ketentuan = { ...(p.ketentuan || {}) };
+      const cur = ketentuan[kode] || { kelasBoleh: [], tidakBisa: {}, mapelPerKelas: {} };
+      const curList = (cur.mapelPerKelas || {})[kelasKode] || [];
+      const nextList = checked ? [...new Set([...curList, mapelKode])] : curList.filter((x) => x !== mapelKode);
+      const mapelPerKelas = { ...(cur.mapelPerKelas || {}), [kelasKode]: nextList };
+      ketentuan[kode] = { ...cur, mapelPerKelas };
+      return { ...p, ketentuan };
+    });
+  };
+  const mapelOptionsFor = (guruKode, kelasKode) => {
+    const allowed = JADWAL.ketentuan?.[guruKode]?.mapelPerKelas?.[kelasKode];
+    return allowed && allowed.length > 0 ? JADWAL.mapel.filter((m) => allowed.includes(m.kode)) : JADWAL.mapel;
   };
   const toggleTidakBisa = (kode, hari, jamKode) => {
     setJADWAL((p) => {
@@ -2271,9 +2389,20 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
       return { ...p, gridPutri };
     });
   };
+  const setPiket = (which, hari, jamKode, val) => {
+    setJADWAL((p) => {
+      const key = which === "putra" ? "piketPutra" : "piketPutri";
+      const piket = { ...(p[key] || {}) };
+      const hariObj = { ...(piket[hari] || {}) };
+      hariObj[jamKode] = val;
+      piket[hari] = hariObj;
+      return { ...p, [key]: piket };
+    });
+  };
 
+  const jadwalHTML = useMemo(() => buildJadwalHTML(JADWAL, LEMBAGA, SEM, putriKelas, false), [JADWAL, LEMBAGA, SEM, putriKelas]);
   const doPrint = () => {
-    const html = buildJadwalHTML(JADWAL, LEMBAGA, SEM, putriKelas);
+    const html = buildJadwalHTML(JADWAL, LEMBAGA, SEM, putriKelas, true);
     const win = window.open("", "_blank");
     if (!win) { alert("Popup diblokir browser. Izinkan popup untuk mencetak."); return; }
     win.document.write(html);
@@ -2306,7 +2435,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
           )}
 
           <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#111827", margin: "0 0 8px" }}>Jadwal Putra</h3>
-          <div style={{ overflowX: "auto", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "10px", marginBottom: "24px" }}>
+          <div style={{ overflowX: "auto", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "10px" }}>
             <table style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -2331,13 +2460,18 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                       return (
                         <td key={k.kode} style={{ ...tdStyle, background: colorOf(cell.g), padding: "3px", outline: conflict ? "2px solid #dc2626" : "none", outlineOffset: "-2px" }} title={conflict ? conflict.join(" | ") : undefined}>
                           <div style={{ display: "flex", gap: "2px", justifyContent: "center", alignItems: "center" }}>
-                            <select value={cell.g} onChange={(e) => setCell(hari, jam.kode, k.kode, "g", e.target.value)} style={cellSelect} title="Kode guru">
+                            <select value={cell.g} onChange={(e) => {
+                              const newG = e.target.value;
+                              setCell(hari, jam.kode, k.kode, "g", newG);
+                              const allowed = JADWAL.ketentuan?.[newG]?.mapelPerKelas?.[k.kode];
+                              if (allowed && allowed.length === 1) setCell(hari, jam.kode, k.kode, "m", allowed[0]);
+                            }} style={cellSelect} title="Kode guru">
                               <option value="">-</option>
                               {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode}</option>)}
                             </select>
                             <select value={cell.m} onChange={(e) => setCell(hari, jam.kode, k.kode, "m", e.target.value)} style={cellSelect} title="Kode mapel">
                               <option value="">-</option>
-                              {JADWAL.mapel.map((m) => <option key={m.kode} value={m.kode}>{m.kode}</option>)}
+                              {mapelOptionsFor(cell.g, k.kode).map((m) => <option key={m.kode} value={m.kode}>{m.kode}</option>)}
                             </select>
                             {conflict && <span style={{ color: "#dc2626", fontSize: "10px" }}>⚠</span>}
                           </div>
@@ -2349,8 +2483,9 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
               </tbody>
             </table>
           </div>
+          <PiketEditor title="🎫 Guru Piket — Putra" piket={JADWAL.piketPutra} onChange={(h, j, v) => setPiket("putra", h, j, v)} />
 
-          <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#111827", margin: "0 0 4px" }}>Jadwal Putri</h3>
+          <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#111827", margin: "28px 0 4px" }}>Jadwal Putri</h3>
           <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0 }}>Kelas di sini mengikuti kelas Putri yang terdaftar di Dashboard → Rekap Per Kelas (kelas di luar kelompok default). Wustho Putri (WS I PI / WS II PI) tetap ada di tabel Jadwal Putra di atas.</p>
           {putriKelas.length === 0 ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
@@ -2382,13 +2517,18 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                         return (
                           <td key={k.kode} style={{ ...tdStyle, background: colorOf(cell.g), padding: "3px", outline: conflict ? "2px solid #dc2626" : "none", outlineOffset: "-2px" }} title={conflict ? conflict.join(" | ") : undefined}>
                             <div style={{ display: "flex", gap: "2px", justifyContent: "center", alignItems: "center" }}>
-                              <select value={cell.g} onChange={(e) => setCellPutri(hari, jam.kode, k.kode, "g", e.target.value)} style={cellSelect} title="Kode guru">
+                              <select value={cell.g} onChange={(e) => {
+                                const newG = e.target.value;
+                                setCellPutri(hari, jam.kode, k.kode, "g", newG);
+                                const allowed = JADWAL.ketentuan?.[newG]?.mapelPerKelas?.[k.kode];
+                                if (allowed && allowed.length === 1) setCellPutri(hari, jam.kode, k.kode, "m", allowed[0]);
+                              }} style={cellSelect} title="Kode guru">
                                 <option value="">-</option>
                                 {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode}</option>)}
                               </select>
                               <select value={cell.m} onChange={(e) => setCellPutri(hari, jam.kode, k.kode, "m", e.target.value)} style={cellSelect} title="Kode mapel">
                                 <option value="">-</option>
-                                {JADWAL.mapel.map((m) => <option key={m.kode} value={m.kode}>{m.kode}</option>)}
+                                {mapelOptionsFor(cell.g, k.kode).map((m) => <option key={m.kode} value={m.kode}>{m.kode}</option>)}
                               </select>
                               {conflict && <span style={{ color: "#dc2626", fontSize: "10px" }}>⚠</span>}
                             </div>
@@ -2401,6 +2541,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
               </table>
             </div>
           )}
+          <PiketEditor title="🎫 Guru Piket — Putri" piket={JADWAL.piketPutri} onChange={(h, j, v) => setPiket("putri", h, j, v)} />
         </>
       )}
 
@@ -2499,30 +2640,62 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                       <tr>
                         <td colSpan={4} style={{ padding: "12px 16px", background: "#fafafa" }}>
                           <div style={{ marginBottom: "12px" }}>
-                            <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Kelas yang boleh diampu (kosongkan semua = boleh mengajar di semua kelas, termasuk kelas Putri)</div>
+                            <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Kelas & mata pelajaran yang diampu (kosongkan kelas = boleh mengajar di semua kelas; kosongkan mapel = boleh mapel apa saja di kelas itu). Ini juga dipakai untuk mengisi otomatis kolom mapel di tab "Jadwal" begitu guru ini dipilih di suatu sel.</div>
                             <div style={{ fontSize: "10px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", marginBottom: "4px" }}>Jadwal Putra</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "8px" }}>
                               {JADWAL_KELAS.map((k) => {
                                 const checked = (JADWAL.ketentuan?.[g.kode]?.kelasBoleh || []).includes(k.kode);
+                                const mapelSel = JADWAL.ketentuan?.[g.kode]?.mapelPerKelas?.[k.kode] || [];
                                 return (
-                                  <label key={k.kode} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", border: "1px solid " + (checked ? "#047857" : "#d1d5db"), background: checked ? "#ecfdf5" : "white", fontSize: "11px", cursor: "pointer" }}>
-                                    <input type="checkbox" checked={checked} onChange={(e) => setKelasBoleh(g.kode, k.kode, e.target.checked)} />
-                                    {k.label}
-                                  </label>
+                                  <div key={k.kode} style={{ display: "flex", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
+                                    <label style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", border: "1px solid " + (checked ? "#047857" : "#d1d5db"), background: checked ? "#ecfdf5" : "white", fontSize: "11px", cursor: "pointer", minWidth: "88px" }}>
+                                      <input type="checkbox" checked={checked} onChange={(e) => setKelasBoleh(g.kode, k.kode, e.target.checked)} />
+                                      {k.label}
+                                    </label>
+                                    {checked && (
+                                      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", alignItems: "center" }}>
+                                        {JADWAL.mapel.map((m) => {
+                                          const mchecked = mapelSel.includes(m.kode);
+                                          return (
+                                            <label key={m.kode} style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 6px", borderRadius: "5px", border: "1px solid " + (mchecked ? "#1e40af" : "#e5e7eb"), background: mchecked ? "#eff6ff" : "#fafafa", fontSize: "10px", cursor: "pointer" }}>
+                                              <input type="checkbox" checked={mchecked} onChange={(e) => toggleMapelPerKelas(g.kode, k.kode, m.kode, e.target.checked)} />
+                                              {m.nama}
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
                                 );
                               })}
                             </div>
                             {putriKelas.length > 0 && (
                               <>
                                 <div style={{ fontSize: "10px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", marginBottom: "4px" }}>Jadwal Putri</div>
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                                   {putriKelas.map((k) => {
                                     const checked = (JADWAL.ketentuan?.[g.kode]?.kelasBoleh || []).includes(k.kode);
+                                    const mapelSel = JADWAL.ketentuan?.[g.kode]?.mapelPerKelas?.[k.kode] || [];
                                     return (
-                                      <label key={k.kode} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", border: "1px solid " + (checked ? "#047857" : "#d1d5db"), background: checked ? "#ecfdf5" : "white", fontSize: "11px", cursor: "pointer" }}>
-                                        <input type="checkbox" checked={checked} onChange={(e) => setKelasBoleh(g.kode, k.kode, e.target.checked)} />
-                                        {k.label}
-                                      </label>
+                                      <div key={k.kode} style={{ display: "flex", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
+                                        <label style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", border: "1px solid " + (checked ? "#047857" : "#d1d5db"), background: checked ? "#ecfdf5" : "white", fontSize: "11px", cursor: "pointer", minWidth: "88px" }}>
+                                          <input type="checkbox" checked={checked} onChange={(e) => setKelasBoleh(g.kode, k.kode, e.target.checked)} />
+                                          {k.label}
+                                        </label>
+                                        {checked && (
+                                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", alignItems: "center" }}>
+                                            {JADWAL.mapel.map((m) => {
+                                              const mchecked = mapelSel.includes(m.kode);
+                                              return (
+                                                <label key={m.kode} style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 6px", borderRadius: "5px", border: "1px solid " + (mchecked ? "#1e40af" : "#e5e7eb"), background: mchecked ? "#eff6ff" : "#fafafa", fontSize: "10px", cursor: "pointer" }}>
+                                                  <input type="checkbox" checked={mchecked} onChange={(e) => toggleMapelPerKelas(g.kode, k.kode, m.kode, e.target.checked)} />
+                                                  {m.nama}
+                                                </label>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
                                     );
                                   })}
                                 </div>
@@ -2568,11 +2741,17 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
       )}
 
       {tab === "cetak" && (
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "20px", textAlign: "center" }}>
-          <p style={{ fontSize: "13px", color: "#4b5563", marginTop: 0 }}>Cetak jadwal pelajaran (A4 landscape) atau unduh sebagai file Excel, lengkap dengan legenda kode guru & mata pelajaran.</p>
-          <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "10px" }}>
-            <GreenBtn onClick={doPrint}>🖨️ Cetak Jadwal</GreenBtn>
-            <button onClick={doExcel} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📥 Export Excel</button>
+        <div>
+          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "20px", textAlign: "center", marginBottom: "14px" }}>
+            <p style={{ fontSize: "13px", color: "#4b5563", marginTop: 0 }}>Cetak jadwal pelajaran (A4 landscape) atau unduh sebagai file Excel. Jadwal Putra memakai kode guru/mapel dengan legenda + guru piket sejajar legenda; Jadwal Putri memakai nama lengkap (tanpa legenda) dengan guru piket di sampingnya. Pratinjau persis tampilan cetak ada di bawah.</p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "10px" }}>
+              <GreenBtn onClick={doPrint}>🖨️ Cetak Jadwal</GreenBtn>
+              <button onClick={doExcel} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📥 Export Excel</button>
+            </div>
+          </div>
+          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", fontSize: "12px", fontWeight: 500, color: "#111827" }}>👁️ Pratinjau Cetak</div>
+            <iframe title="Pratinjau Cetak Jadwal" srcDoc={jadwalHTML} style={{ width: "100%", height: "720px", border: "none", display: "block" }} />
           </div>
         </div>
       )}
