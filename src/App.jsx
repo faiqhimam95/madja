@@ -106,6 +106,9 @@ const JADWAL_JAM = [
   { kode: "I", waktu: "05.30 - 06.30" },
   { kode: "II", waktu: "06.30 - 07.30" },
 ];
+// Wustho already had a Putra/Putri split (PA/PI); Awwaliyah didn't, so the Putri
+// Awwaliyah columns are appended after Wustho rather than interleaved, so every
+// existing column (including WS I PI / WS II PI) keeps its original position.
 const JADWAL_KELAS = [
   { kode: "awia", label: "AW I A", grup: "Awwaliyah" },
   { kode: "awib", label: "AW IB", grup: "Awwaliyah" },
@@ -116,7 +119,22 @@ const JADWAL_KELAS = [
   { kode: "wsiipa", label: "WS II PA", grup: "Wustho" },
   { kode: "wsipi", label: "WS I PI", grup: "Wustho" },
   { kode: "wsiipi", label: "WS II PI", grup: "Wustho" },
+  { kode: "awia_pi", label: "AW I A PI", grup: "Awwaliyah Putri" },
+  { kode: "awib_pi", label: "AW IB PI", grup: "Awwaliyah Putri" },
+  { kode: "awiia_pi", label: "AW IIA PI", grup: "Awwaliyah Putri" },
+  { kode: "awiib_pi", label: "AW IIB PI", grup: "Awwaliyah Putri" },
+  { kode: "awiiia_pi", label: "AW IIIA PI", grup: "Awwaliyah Putri" },
 ];
+// Contiguous run-length grouping of JADWAL_KELAS by `grup`, for group-header colspans.
+function jadwalGroups() {
+  const groups = [];
+  JADWAL_KELAS.forEach((k) => {
+    const last = groups[groups.length - 1];
+    if (last && last.grup === k.grup) last.count++;
+    else groups.push({ grup: k.grup, count: 1 });
+  });
+  return groups;
+}
 const JADWAL_PALETTE = ["#fde68a", "#bbf7d0", "#bfdbfe", "#fbcfe8", "#ddd6fe", "#fed7aa", "#a7f3d0", "#fecaca", "#c7d2fe", "#fef08a", "#99f6e4", "#e9d5ff", "#fca5a5", "#bae6fd", "#d9f99d", "#f5d0fe", "#fdba74"];
 
 const DEFAULT_JADWAL_GURU = [
@@ -162,6 +180,11 @@ const jc = (g, m) => ({ g, m: String(m) });
 const DEFAULT_JADWAL = {
   guru: DEFAULT_JADWAL_GURU,
   mapel: DEFAULT_JADWAL_MAPEL,
+  // Per-guru teaching constraints, keyed by kode guru. kelasBoleh: [] means unrestricted
+  // (may teach any kelas); tidakBisa: { [hari]: { [jamKode]: true } } marks specific
+  // day/period slots the guru is unavailable for. Empty by default — nobody is restricted
+  // until Super Admin sets it in the "Ketentuan Guru" panel.
+  ketentuan: {},
   grid: {
     SABTU: {
       I: { awia: jc("O", 11), awib: jc("P", 10), awiia: jc("M", 8), awiib: jc("L", 2), awiiia: jc("D", 9), wsipa: jc("C", 6), wsiipa: jc("J", 6), wsipi: jc("F", 8), wsiipi: jc("Q", 3) },
@@ -215,6 +238,54 @@ function jadwalCountUsage(grid, field, kode) {
     if (cell && cell[field] === kode) n++;
   })));
   return n;
+}
+// Renames (or, when newKode is "", deletes) a guru kode across both the grid cells and
+// their "Ketentuan Guru" constraint entry in one pass, so the two never drift apart.
+function jadwalRenameGuruKode(JADWAL, oldKode, newKode) {
+  const grid = jadwalRenameKode(JADWAL.grid, "g", oldKode, newKode);
+  const ketentuan = { ...(JADWAL.ketentuan || {}) };
+  if (oldKode in ketentuan) {
+    const val = ketentuan[oldKode];
+    delete ketentuan[oldKode];
+    if (newKode) ketentuan[newKode] = val;
+  }
+  return { grid, ketentuan };
+}
+// Flags two kinds of scheduling clashes across every hari/jam/kelas cell (including the
+// new Awwaliyah Putri columns): the same guru assigned to >1 kelas in the same period,
+// and a guru assigned somewhere their "Ketentuan Guru" settings mark as off-limits.
+// Returns { "hari|jamKode|kelasKode": [reason, ...] } for cells that have a conflict.
+function computeJadwalConflicts(JADWAL) {
+  const conflicts = {};
+  const flag = (hari, jamKode, kelasKode, reason) => {
+    const key = `${hari}|${jamKode}|${kelasKode}`;
+    (conflicts[key] = conflicts[key] || []).push(reason);
+  };
+  JADWAL_HARI.forEach((hari) => {
+    JADWAL_JAM.forEach((jam) => {
+      const byGuru = {};
+      JADWAL_KELAS.forEach((k) => {
+        const cell = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode];
+        const g = cell?.g;
+        if (!g) return;
+        (byGuru[g] = byGuru[g] || []).push(k.kode);
+        const ket = JADWAL.ketentuan?.[g];
+        if (ket?.tidakBisa?.[hari]?.[jam.kode]) {
+          flag(hari, jam.kode, k.kode, `${g} menandai tidak bisa mengajar ${hari} Jam ${jam.kode}`);
+        }
+        if (ket?.kelasBoleh?.length && !ket.kelasBoleh.includes(k.kode)) {
+          flag(hari, jam.kode, k.kode, `${g} tidak diizinkan mengajar kelas ini (lihat Ketentuan Guru)`);
+        }
+      });
+      Object.entries(byGuru).forEach(([g, kelasHere]) => {
+        if (kelasHere.length > 1) {
+          const labels = kelasHere.map((kk) => JADWAL_KELAS.find((x) => x.kode === kk)?.label || kk).join(", ");
+          kelasHere.forEach((kk) => flag(hari, jam.kode, kk, `${g} bentrok: mengajar ${kelasHere.length} kelas sekaligus (${labels})`));
+        }
+      });
+    });
+  });
+  return conflicts;
 }
 
 const KELAS_ORDER = ["aw1a","aw1b","aw2a","aw2b","aw3a","ws1","ws2"];
@@ -470,8 +541,8 @@ ${pages.join("\n")}
 function buildJadwalHTML(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM) {
   const semTipeLabel = SEM?.tipe === "ganjil" ? "Ganjil" : "Genap";
   const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
-  const awCount = JADWAL_KELAS.filter((k) => k.grup === "Awwaliyah").length;
-  const wsCount = JADWAL_KELAS.filter((k) => k.grup === "Wustho").length;
+  const groups = jadwalGroups();
+  const conflicts = computeJadwalConflicts(JADWAL);
 
   const rows = JADWAL_HARI.map((hari) => JADWAL_JAM.map((jam, ji) => `
     <tr>
@@ -480,23 +551,26 @@ function buildJadwalHTML(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM) {
       <td class="c">${jam.waktu}</td>
       ${JADWAL_KELAS.map((k) => {
         const cell = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
-        return `<td class="c" style="background:${colorOf(cell.g)}"><b>${cell.g || "-"}</b>${cell.m ? " " + cell.m : ""}</td>`;
+        const conflict = conflicts[`${hari}|${jam.kode}|${k.kode}`];
+        const style = `background:${colorOf(cell.g)}${conflict ? ";outline:2px solid #dc2626;outline-offset:-2px" : ""}`;
+        return `<td class="c" style="${style}" title="${conflict ? conflict.join(" | ").replace(/"/g, "'") : ""}"><b>${cell.g || "-"}</b>${cell.m ? " " + cell.m : ""}${conflict ? " ⚠" : ""}</td>`;
       }).join("")}
     </tr>`).join("")).join("");
 
   const guruRows = JADWAL.guru.map((g) => `<tr><td class="c b" style="background:${colorOf(g.kode)}">${g.kode}</td><td>${g.nama}</td></tr>`).join("");
   const mapelRows = JADWAL.mapel.map((m) => `<tr><td class="c b">${m.kode}</td><td>${m.nama}</td></tr>`).join("");
+  const conflictNote = Object.keys(conflicts).length > 0 ? `<div class="sub" style="color:#dc2626;font-weight:bold">⚠ ${Object.keys(conflicts).length} sel bentrok terdeteksi — lihat sel bergaris merah</div>` : "";
 
   return `<!DOCTYPE html><html lang=id><head><meta charset=UTF-8><title>Jadwal Pelajaran — ${LEMBAGA.namaSingkat}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;font-size:11px;background:#fff}
-@page{size:A4 landscape;margin:8mm}
+body{font-family:Arial,sans-serif;font-size:10px;background:#fff}
+@page{size:A4 landscape;margin:6mm}
 @media screen{.wrap{max-width:290mm;margin:10mm auto 20mm;padding:6mm;border:1px solid #ccc;background:white}}
 .ttl{text-align:center;font-weight:bold;font-size:14px}
 .sub{text-align:center;font-size:12px;margin-bottom:10px}
 table{width:100%;border-collapse:collapse;margin-bottom:14px}
-th,td{border:1px solid #000;padding:3px 4px;font-size:10.5px}
+th,td{border:1px solid #000;padding:2px 3px;font-size:9.5px}
 th{background:#e5e7eb;text-align:center}
 .c{text-align:center}
 .b{font-weight:bold}
@@ -507,9 +581,10 @@ th{background:#e5e7eb;text-align:center}
   <div class="ttl">JADWAL MATA PELAJARAN SEMESTER ${semTipeLabel.toUpperCase()}</div>
   <div class="ttl">${(LEMBAGA.namaLembaga || "").toUpperCase()} ${LEMBAGA.namaPondok || ""}</div>
   <div class="sub">TAHUN DIRASAH ${SEM?.tahun || ""}</div>
+  ${conflictNote}
   <table>
     <thead>
-      <tr><th rowspan="2">HARI</th><th rowspan="2">JAM KE</th><th rowspan="2">WAKTU</th><th colspan="${awCount}">KELAS AWWALIYAH</th><th colspan="${wsCount}">KELAS WUSTHO</th></tr>
+      <tr><th rowspan="2">HARI</th><th rowspan="2">JAM KE</th><th rowspan="2">WAKTU</th>${groups.map((g) => `<th colspan="${g.count}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}</tr>
       <tr>${JADWAL_KELAS.map((k) => `<th>${k.label}</th>`).join("")}</tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -2006,14 +2081,25 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
   );
 }
 
-function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM }) {
+function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM }) {
   const [tab, setTab] = useState("jadwal");
   const [newGuruKode, setNewGuruKode] = useState("");
   const [newGuruNama, setNewGuruNama] = useState("");
   const [newMapelKode, setNewMapelKode] = useState("");
   const [newMapelNama, setNewMapelNama] = useState("");
+  const [expandedGuru, setExpandedGuru] = useState(() => new Set());
 
   const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
+
+  // Accounts from "Penugasan Guru" (wali kelas and/or subject-teacher accounts) offered
+  // as a pick-list when adding a guru here, so the same name doesn't get typed twice.
+  const staffOptions = useMemo(
+    () => (ACCS || []).filter((a) => kelasList(a).length > 0 || (GM?.[a.u] || []).length > 0),
+    [ACCS, GM]
+  );
+
+  const conflicts = useMemo(() => computeJadwalConflicts(JADWAL), [JADWAL]);
+  const conflictCount = Object.keys(conflicts).length;
 
   const addGuru = () => {
     const kode = newGuruKode.trim().toUpperCase();
@@ -2031,14 +2117,56 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM }) {
     setJADWAL((p) => {
       const old = p.guru[i];
       if (!kode || (kode !== old.kode && p.guru.some((g) => g.kode === kode))) return p;
-      return { ...p, guru: p.guru.map((g, idx) => (idx === i ? { ...g, kode } : g)), grid: jadwalRenameKode(p.grid, "g", old.kode, kode) };
+      const { grid, ketentuan } = jadwalRenameGuruKode(p, old.kode, kode);
+      return { ...p, guru: p.guru.map((g, idx) => (idx === i ? { ...g, kode } : g)), grid, ketentuan };
     });
   };
   const removeGuru = (i) => {
     const g = JADWAL.guru[i];
     const n = jadwalCountUsage(JADWAL.grid, "g", g.kode);
     if (!window.confirm(n > 0 ? `Kode guru "${g.kode}" (${g.nama}) dipakai di ${n} sel jadwal. Hapus tetap? Sel tersebut akan dikosongkan.` : `Hapus guru "${g.nama}"?`)) return;
-    setJADWAL((p) => ({ ...p, guru: p.guru.filter((_, idx) => idx !== i), grid: jadwalRenameKode(p.grid, "g", g.kode, "") }));
+    setJADWAL((p) => {
+      const { grid, ketentuan } = jadwalRenameGuruKode(p, g.kode, "");
+      return { ...p, guru: p.guru.filter((_, idx) => idx !== i), grid, ketentuan };
+    });
+  };
+
+  const setKelasBoleh = (kode, kelasKode, checked) => {
+    setJADWAL((p) => {
+      const ketentuan = { ...(p.ketentuan || {}) };
+      const cur = ketentuan[kode] || { kelasBoleh: [], tidakBisa: {} };
+      const kelasBoleh = checked
+        ? [...new Set([...(cur.kelasBoleh || []), kelasKode])]
+        : (cur.kelasBoleh || []).filter((x) => x !== kelasKode);
+      ketentuan[kode] = { ...cur, kelasBoleh };
+      return { ...p, ketentuan };
+    });
+  };
+  const toggleTidakBisa = (kode, hari, jamKode) => {
+    setJADWAL((p) => {
+      const ketentuan = { ...(p.ketentuan || {}) };
+      const cur = ketentuan[kode] || { kelasBoleh: [], tidakBisa: {} };
+      const tidakBisa = { ...(cur.tidakBisa || {}) };
+      const hariObj = { ...(tidakBisa[hari] || {}) };
+      if (hariObj[jamKode]) delete hariObj[jamKode]; else hariObj[jamKode] = true;
+      if (Object.keys(hariObj).length) tidakBisa[hari] = hariObj; else delete tidakBisa[hari];
+      ketentuan[kode] = { ...cur, tidakBisa };
+      return { ...p, ketentuan };
+    });
+  };
+  const toggleExpanded = (kode) => {
+    setExpandedGuru((prev) => {
+      const next = new Set(prev);
+      if (next.has(kode)) next.delete(kode); else next.add(kode);
+      return next;
+    });
+  };
+  const ketentuanSummary = (kode) => {
+    const ket = JADWAL.ketentuan?.[kode];
+    const kelasN = ket?.kelasBoleh?.length || 0;
+    const tidakN = ket?.tidakBisa ? Object.values(ket.tidakBisa).reduce((s, o) => s + Object.keys(o).length, 0) : 0;
+    if (kelasN === 0 && tidakN === 0) return "Semua kelas · semua jam bisa";
+    return `${kelasN > 0 ? `${kelasN} kelas dipilih` : "Semua kelas"} · ${tidakN > 0 ? `${tidakN} slot tidak bisa` : "semua jam bisa"}`;
   };
 
   const addMapel = () => {
@@ -2098,15 +2226,20 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM }) {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px" }}>
-        {[["jadwal", "🗓️ Jadwal"], ["master", "🧑‍🏫 Guru & Mapel"], ["cetak", "🖨️ Cetak & Export"]].map(([k, lbl]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#92400e" : "#6b7280" }}>{lbl}</button>
+      <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px", flexWrap: "wrap" }}>
+        {[["jadwal", "🗓️ Jadwal"], ["master", "🧑‍🏫 Guru & Mapel"], ["ketentuan", "📋 Ketentuan Guru"], ["cetak", "🖨️ Cetak & Export"]].map(([k, lbl]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ flex: "1 1 auto", padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#92400e" : "#6b7280" }}>{lbl}</button>
         ))}
       </div>
 
       {tab === "jadwal" && (
         <>
-          <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Isi kode guru & kode mapel di tiap sel. Tambah/ubah daftar guru dan mata pelajaran di tab "Guru & Mapel".</p>
+          <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Isi kode guru & kode mapel di tiap sel. Tambah/ubah daftar guru dan mata pelajaran di tab "Guru & Mapel", atur ketentuan di tab "Ketentuan Guru".</p>
+          {conflictCount > 0 && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", marginBottom: "10px", fontWeight: 500 }}>
+              ⚠️ {conflictCount} sel bentrok terdeteksi (guru mengajar dobel, atau di luar ketentuannya) — sel bergaris merah. Arahkan kursor ke sel untuk detail.
+            </div>
+          )}
           <div style={{ overflowX: "auto", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "10px" }}>
             <table style={{ borderCollapse: "collapse" }}>
               <thead>
@@ -2114,8 +2247,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM }) {
                   <th style={thStyle} rowSpan={2}>Hari</th>
                   <th style={thStyle} rowSpan={2}>Jam</th>
                   <th style={thStyle} rowSpan={2}>Waktu</th>
-                  <th style={thStyle} colSpan={JADWAL_KELAS.filter((k) => k.grup === "Awwaliyah").length}>Kelas Awwaliyah</th>
-                  <th style={thStyle} colSpan={JADWAL_KELAS.filter((k) => k.grup === "Wustho").length}>Kelas Wustho</th>
+                  {jadwalGroups().map((grp, i) => <th key={i} style={thStyle} colSpan={grp.count}>Kelas {grp.grup}</th>)}
                 </tr>
                 <tr>
                   {JADWAL_KELAS.map((k) => <th key={k.kode} style={thStyle}>{k.label}</th>)}
@@ -2129,9 +2261,10 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM }) {
                     <td style={tdStyle}>{jam.waktu}</td>
                     {JADWAL_KELAS.map((k) => {
                       const cell = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+                      const conflict = conflicts[`${hari}|${jam.kode}|${k.kode}`];
                       return (
-                        <td key={k.kode} style={{ ...tdStyle, background: colorOf(cell.g), padding: "3px" }}>
-                          <div style={{ display: "flex", gap: "2px", justifyContent: "center" }}>
+                        <td key={k.kode} style={{ ...tdStyle, background: colorOf(cell.g), padding: "3px", outline: conflict ? "2px solid #dc2626" : "none", outlineOffset: "-2px" }} title={conflict ? conflict.join(" | ") : undefined}>
+                          <div style={{ display: "flex", gap: "2px", justifyContent: "center", alignItems: "center" }}>
                             <select value={cell.g} onChange={(e) => setCell(hari, jam.kode, k.kode, "g", e.target.value)} style={cellSelect} title="Kode guru">
                               <option value="">-</option>
                               {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode}</option>)}
@@ -2140,6 +2273,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM }) {
                               <option value="">-</option>
                               {JADWAL.mapel.map((m) => <option key={m.kode} value={m.kode}>{m.kode}</option>)}
                             </select>
+                            {conflict && <span style={{ color: "#dc2626", fontSize: "10px" }}>⚠</span>}
                           </div>
                         </td>
                       );
@@ -2157,9 +2291,15 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM }) {
           <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
             <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "13px", fontWeight: 500 }}>Kode Guru — {JADWAL.guru.length}</span>
-              <div style={{ display: "flex", gap: "6px" }}>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {staffOptions.length > 0 && (
+                  <select onChange={(e) => { if (e.target.value) setNewGuruNama(e.target.value); e.target.value = ""; }} defaultValue="" style={{ ...inputA, width: "170px" }} title="Isi nama dari akun Penugasan Guru">
+                    <option value="">— Dari Penugasan Guru —</option>
+                    {staffOptions.map((a) => <option key={a.u} value={a.name}>{a.name}</option>)}
+                  </select>
+                )}
                 <input type="text" value={newGuruKode} onChange={(e) => setNewGuruKode(e.target.value)} placeholder="Kode" style={{ ...inputA, width: "56px" }} />
-                <input type="text" value={newGuruNama} onChange={(e) => setNewGuruNama(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addGuru()} placeholder="Nama guru" style={{ ...inputA, width: "160px" }} />
+                <input type="text" value={newGuruNama} onChange={(e) => setNewGuruNama(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addGuru()} placeholder="atau ketik nama baru" style={{ ...inputA, width: "160px" }} />
                 <GreenBtn onClick={addGuru} style={{ padding: "7px 12px", fontSize: "12px" }}>+ Tambah</GreenBtn>
               </div>
             </div>
@@ -2214,6 +2354,84 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM }) {
         </div>
       )}
 
+      {tab === "ketentuan" && (
+        <>
+          <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Daftar guru berikut sama dengan daftar di tab "Guru & Mapel". Atur kelas yang boleh diampu dan hari/jam ketersediaan tiap guru — dipakai untuk mendeteksi bentrok jadwal otomatis di tab "Jadwal".</p>
+          <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+              <thead>
+                <tr style={{ background: "#f9fafb" }}>
+                  {["Kode", "Nama Guru", "Ketentuan", ""].map((h) => (
+                    <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {JADWAL.guru.map((g) => (
+                  <React.Fragment key={g.kode}>
+                    <tr style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: "8px 12px" }}><span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "6px", background: colorOf(g.kode), fontWeight: 600 }}>{g.kode}</span></td>
+                      <td style={{ padding: "8px 12px", fontWeight: 500 }}>{g.nama}</td>
+                      <td style={{ padding: "8px 12px", color: "#6b7280" }}>{ketentuanSummary(g.kode)}</td>
+                      <td style={{ padding: "8px 12px" }}>
+                        <button onClick={() => toggleExpanded(g.kode)} style={{ padding: "5px 10px", background: "#eff6ff", color: "#1e40af", border: "none", borderRadius: "6px", fontSize: "11px", cursor: "pointer" }}>{expandedGuru.has(g.kode) ? "Tutup" : "Atur"}</button>
+                      </td>
+                    </tr>
+                    {expandedGuru.has(g.kode) && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: "12px 16px", background: "#fafafa" }}>
+                          <div style={{ marginBottom: "12px" }}>
+                            <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Kelas yang boleh diampu (kosongkan semua = boleh mengajar di semua kelas, termasuk kelas Putri)</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                              {JADWAL_KELAS.map((k) => {
+                                const checked = (JADWAL.ketentuan?.[g.kode]?.kelasBoleh || []).includes(k.kode);
+                                return (
+                                  <label key={k.kode} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", border: "1px solid " + (checked ? "#047857" : "#d1d5db"), background: checked ? "#ecfdf5" : "white", fontSize: "11px", cursor: "pointer" }}>
+                                    <input type="checkbox" checked={checked} onChange={(e) => setKelasBoleh(g.kode, k.kode, e.target.checked)} />
+                                    {k.label}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Ketersediaan hari & jam</div>
+                            <table style={{ borderCollapse: "collapse", fontSize: "11px" }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ padding: "4px 8px" }}></th>
+                                  {JADWAL_JAM.map((jam) => <th key={jam.kode} style={{ padding: "4px 8px" }}>Jam {jam.kode}</th>)}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {JADWAL_HARI.map((hari) => (
+                                  <tr key={hari}>
+                                    <td style={{ padding: "4px 8px", fontWeight: 500 }}>{hari}</td>
+                                    {JADWAL_JAM.map((jam) => {
+                                      const bisa = !JADWAL.ketentuan?.[g.kode]?.tidakBisa?.[hari]?.[jam.kode];
+                                      return (
+                                        <td key={jam.kode} style={{ padding: "4px 8px", textAlign: "center" }}>
+                                          <button onClick={() => toggleTidakBisa(g.kode, hari, jam.kode)} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", fontSize: "11px", cursor: "pointer", background: bisa ? "#d1fae5" : "#fee2e2", color: bisa ? "#065f46" : "#991b1b" }}>{bisa ? "Bisa" : "Tidak Bisa"}</button>
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+                {JADWAL.guru.length === 0 && <tr><td colSpan={4} style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada guru. Tambahkan di tab "Guru & Mapel".</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       {tab === "cetak" && (
         <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "20px", textAlign: "center" }}>
           <p style={{ fontSize: "13px", color: "#4b5563", marginTop: 0 }}>Cetak jadwal pelajaran (A4 landscape) atau unduh sebagai file Excel, lengkap dengan legenda kode guru & mata pelajaran.</p>
@@ -2252,7 +2470,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
       {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} />}
       {tab === "mapel" && <AdminMapel CL={CL} setCL={setCL} setGM={setGM} />}
       {tab === "guru" && <AdminPenugasan ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} CL={CL} setCL={setCL} />}
-      {tab === "jadwal" && isSuperAdmin && <AdminJadwal JADWAL={JADWAL} setJADWAL={setJADWAL} LEMBAGA={LEMBAGA} SEM={SEM} />}
+      {tab === "jadwal" && isSuperAdmin && <AdminJadwal JADWAL={JADWAL} setJADWAL={setJADWAL} LEMBAGA={LEMBAGA} SEM={SEM} ACCS={ACCS} GM={GM} />}
       {tab === "identitas" && isSuperAdmin && <AdminLembaga LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} />}
     </div>
   );
