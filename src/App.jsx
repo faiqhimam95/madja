@@ -582,8 +582,11 @@ ${pages.join("\n")}
 // Shared table-HTML builder for both the Jadwal Putra and Jadwal Putri tables.
 // opts.useNames: print guru/mapel as their full name instead of kode (Jadwal Putri
 // doesn't get a legend to decode codes with, so it must be self-explanatory).
+// opts.piketColumn: when set (Jadwal Putri only), an extra "Guru Piket" column is
+// appended using the SAME hari/jam rows as the main table — attached directly to it
+// instead of a separate side table, so hari/jam aren't labeled a second time.
 function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf, opts = {}) {
-  const { useNames = false, guruByKode = {}, mapelByKode = {} } = opts;
+  const { useNames = false, guruByKode = {}, mapelByKode = {}, piketColumn = null } = opts;
   if (!kelasList || kelasList.length === 0) {
     return `<p style="font-size:11px;color:#6b7280;font-style:italic">Belum ada kelas Putri di CL (tambahkan lewat tab Kelas).</p>`;
   }
@@ -605,18 +608,21 @@ function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf, opts = {}) 
         }
         return `<td class="c" style="${style}" title="${title}"><b>${cell.g || "-"}</b>${cell.m ? " " + cell.m : ""}${conflict ? " ⚠" : ""}</td>`;
       }).join("")}
+      ${piketColumn ? `<td class="c b">${piketColumn?.[hari]?.[jam.kode] || "-"}</td>` : ""}
     </tr>`).join("")).join("");
   return `<table>
     <thead>
-      <tr><th rowspan="2">HARI</th><th rowspan="2">JAM KE</th><th rowspan="2">WAKTU</th>${groups.map((g) => `<th colspan="${g.count}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}</tr>
+      <tr><th rowspan="2">HARI</th><th rowspan="2">JAM KE</th><th rowspan="2">WAKTU</th>${groups.map((g) => `<th colspan="${g.count}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}${piketColumn ? `<th rowspan="2">GURU PIKET</th>` : ""}</tr>
       <tr>${kelasList.map((k) => `<th>${k.label}</th>`).join("")}</tr>
     </thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
 
-// Guru Piket table: always name-only (hari, Jam I, Jam II, nama) — piket duty isn't
-// necessarily one of the coded subject teachers, so there's no code to show anyway.
+// Guru Piket table for Jadwal Putra: always name-only (hari, Jam I, Jam II, nama) —
+// piket duty isn't necessarily one of the coded subject teachers, so there's no code
+// to show anyway. Jadwal Putri's piket is attached directly onto its main table
+// instead (see jadwalTableHTML's piketColumn option), per how it's meant to read.
 function jadwalPiketTableHTML(piketData) {
   const rows = JADWAL_HARI.map((hari) => `<tr><td class="c b">${hari}</td><td class="c">${piketData?.[hari]?.I || "-"}</td><td class="c">${piketData?.[hari]?.II || "-"}</td></tr>`).join("");
   return `<table><thead><tr><th colspan="3">GURU PIKET</th></tr><tr><th>Hari</th><th>Jam I</th><th>Jam II</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -656,8 +662,6 @@ th{background:#e5e7eb;text-align:center}
 .b{font-weight:bold}
 .row{display:flex;gap:16px;align-items:flex-start}
 .row>table{width:auto;flex:1}
-.row>.grow{flex:3}
-.row>.grow table{width:100%}
 </style></head><body>
 <div class="wrap">
   <div class="ttl">JADWAL MATA PELAJARAN SEMESTER ${semTipeLabel.toUpperCase()}</div>
@@ -674,95 +678,128 @@ th{background:#e5e7eb;text-align:center}
   </div>
 
   <div class="sect">JADWAL PUTRI</div>
-  <div class="row">
-    <div class="grow">${jadwalTableHTML("putri", putriKelas, JADWAL.gridPutri, conflicts, colorOf, { useNames: true, guruByKode, mapelByKode })}</div>
-    ${jadwalPiketTableHTML(JADWAL.piketPutri)}
-  </div>
+  ${jadwalTableHTML("putri", putriKelas, JADWAL.gridPutri, conflicts, colorOf, { useNames: true, guruByKode, mapelByKode, piketColumn: JADWAL.piketPutri })}
 </div>
 ${autoprint ? `<script>window.onload=()=>{window.print()}<\/script>` : ""}
 </body></html>`;
 }
 
-// Builds one "Jadwal Putra"/"Jadwal Putri"-style sheet for a given kelas list + grid.
-function jadwalSheet(wb, sheetName, kelasList, grid, LEMBAGA, SEM, semTipeLabel) {
-  const NC = 3 + Math.max(kelasList.length, 1) * 2;
-  const bl = () => Array(NC).fill("");
-  const header1 = ["HARI", "JAM KE", "WAKTU"];
-  kelasList.forEach((k) => header1.push(k.label, ""));
-  const header2 = ["", "", ""];
-  kelasList.forEach(() => header2.push("Guru", "Mapel"));
-
-  const dataRows = [];
-  JADWAL_HARI.forEach((hari) => {
-    JADWAL_JAM.forEach((jam, ji) => {
-      const row = [ji === 0 ? hari : "", jam.kode, jam.waktu];
-      kelasList.forEach((k) => {
-        const cell = grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
-        row.push(cell.g || "", cell.m || "");
-      });
-      dataRows.push(row);
-    });
-  });
-
-  const aoa = [
-    [`JADWAL MATA PELAJARAN SEMESTER ${semTipeLabel.toUpperCase()}`, ...Array(NC - 1).fill("")],
-    [(LEMBAGA.namaLembaga || "").toUpperCase(), ...Array(NC - 1).fill("")],
-    [`TAHUN DIRASAH ${SEM?.tahun || ""}`, ...Array(NC - 1).fill("")],
-    bl(),
-    header1,
-    header2,
-    ...(kelasList.length ? dataRows : [["Belum ada kelas Putri di CL (tambahkan lewat tab Kelas)."]]),
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 8 }, { wch: 6 }, { wch: 13 }, ...kelasList.flatMap(() => [{ wch: 6 }, { wch: 6 }])];
-  const merges = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: NC - 1 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: NC - 1 } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: NC - 1 } },
-    { s: { r: 4, c: 0 }, e: { r: 5, c: 0 } },
-    { s: { r: 4, c: 1 }, e: { r: 5, c: 1 } },
-    { s: { r: 4, c: 2 }, e: { r: 5, c: 2 } },
-  ];
-  kelasList.forEach((k, i) => {
-    const col = 3 + i * 2;
-    merges.push({ s: { r: 4, c: col }, e: { r: 4, c: col + 1 } });
-  });
-  if (kelasList.length) {
-    let r = 6;
-    JADWAL_HARI.forEach(() => { merges.push({ s: { r, c: 0 }, e: { r: r + 1, c: 0 } }); r += 2; });
-  }
-  ws["!merges"] = merges;
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-}
-
+// Mirrors buildJadwalHTML's on-screen preview as closely as a spreadsheet allows: one
+// sheet per Jadwal (Putra/Putri) with the legend/piket blocks attached the same way.
 function buildJadwalExcel(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, putriKelas = []) {
   const wb = XLSX.utils.book_new();
   const semTipeLabel = SEM?.tipe === "ganjil" ? "Ganjil" : "Genap";
-
-  jadwalSheet(wb, "Jadwal Putra", JADWAL_KELAS, JADWAL.grid, LEMBAGA, SEM, semTipeLabel);
-  jadwalSheet(wb, "Jadwal Putri", putriKelas, JADWAL.gridPutri, LEMBAGA, SEM, semTipeLabel);
-
-  const legendAoa = [
-    ["KODE GURU", "NAMA GURU"],
-    ...JADWAL.guru.map((g) => [g.kode, g.nama]),
-    [],
-    ["KODE MAPEL", "NAMA MAPEL"],
-    ...JADWAL.mapel.map((m) => [m.kode, m.nama]),
+  const guruByKode = Object.fromEntries(JADWAL.guru.map((g) => [g.kode, g]));
+  const mapelByKode = Object.fromEntries(JADWAL.mapel.map((m) => [m.kode, m]));
+  const titleRows = (nc) => [
+    [`JADWAL MATA PELAJARAN SEMESTER ${semTipeLabel.toUpperCase()}`, ...Array(nc - 1).fill("")],
+    [(LEMBAGA.namaLembaga || "").toUpperCase(), ...Array(nc - 1).fill("")],
+    [`TAHUN DIRASAH ${SEM?.tahun || ""}`, ...Array(nc - 1).fill("")],
+    Array(nc).fill(""),
   ];
-  const ws2 = XLSX.utils.aoa_to_sheet(legendAoa);
-  ws2["!cols"] = [{ wch: 10 }, { wch: 34 }];
-  XLSX.utils.book_append_sheet(wb, ws2, "Kode Guru & Mapel");
 
-  const piketAoa = (piketData) => [
-    ["Hari", "Jam I", "Jam II"],
-    ...JADWAL_HARI.map((hari) => [hari, piketData?.[hari]?.I || "", piketData?.[hari]?.II || ""]),
-  ];
-  const ws3 = XLSX.utils.aoa_to_sheet(piketAoa(JADWAL.piketPutra));
-  ws3["!cols"] = [{ wch: 10 }, { wch: 20 }, { wch: 20 }];
-  XLSX.utils.book_append_sheet(wb, ws3, "Piket Putra");
-  const ws4 = XLSX.utils.aoa_to_sheet(piketAoa(JADWAL.piketPutri));
-  ws4["!cols"] = [{ wch: 10 }, { wch: 20 }, { wch: 20 }];
-  XLSX.utils.book_append_sheet(wb, ws4, "Piket Putri");
+  // ── Jadwal Putra: codes, + Kode Guru / Kode Mapel / Guru Piket blocks side by side
+  // below the main table, mirroring the "sejajar dengan legenda" print layout ──
+  {
+    const NC = 3 + JADWAL_KELAS.length * 2;
+    const header1 = ["HARI", "JAM KE", "WAKTU"];
+    JADWAL_KELAS.forEach((k) => header1.push(k.label, ""));
+    const header2 = ["", "", ""];
+    JADWAL_KELAS.forEach(() => header2.push("Guru", "Mapel"));
+    const dataRows = [];
+    JADWAL_HARI.forEach((hari) => JADWAL_JAM.forEach((jam, ji) => {
+      const row = [ji === 0 ? hari : "", jam.kode, jam.waktu];
+      JADWAL_KELAS.forEach((k) => {
+        const cell = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+        row.push(cell.g || "", cell.m || "");
+      });
+      dataRows.push(row);
+    }));
+    const aoa = [...titleRows(NC), header1, header2, ...dataRows];
+
+    const usedGuruKodes = new Set();
+    JADWAL_HARI.forEach((hari) => JADWAL_JAM.forEach((jam) => JADWAL_KELAS.forEach((k) => {
+      const g = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode]?.g;
+      if (g) usedGuruKodes.add(g);
+    })));
+    const usedGuru = JADWAL.guru.filter((g) => usedGuruKodes.has(g.kode));
+    const guruBlock = [["KODE GURU", ""], ...usedGuru.map((g) => [g.kode, g.nama])];
+    const mapelBlock = [["KODE MAPEL", ""], ...JADWAL.mapel.map((m) => [m.kode, m.nama])];
+    const piketBlock = [["GURU PIKET", "", ""], ["Hari", "Jam I", "Jam II"], ...JADWAL_HARI.map((hari) => [hari, JADWAL.piketPutra?.[hari]?.I || "-", JADWAL.piketPutra?.[hari]?.II || "-"])];
+    const legendRow = aoa.length + 1; // one blank row gap below the main table
+    const guruCol = 0, mapelCol = 3, piketCol = 6;
+    const placeBlock = (block, startCol) => block.forEach((row, i) => {
+      aoa[legendRow + i] = aoa[legendRow + i] || Array(NC).fill("");
+      row.forEach((v, j) => { aoa[legendRow + i][startCol + j] = v; });
+    });
+    placeBlock(guruBlock, guruCol);
+    placeBlock(mapelBlock, mapelCol);
+    placeBlock(piketBlock, piketCol);
+    for (let r = 0; r < aoa.length; r++) if (!aoa[r]) aoa[r] = Array(NC).fill("");
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{ wch: 8 }, { wch: 6 }, { wch: 13 }, ...JADWAL_KELAS.flatMap(() => [{ wch: 6 }, { wch: 6 }])];
+    const merges = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: NC - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: NC - 1 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: NC - 1 } },
+      { s: { r: 4, c: 0 }, e: { r: 5, c: 0 } },
+      { s: { r: 4, c: 1 }, e: { r: 5, c: 1 } },
+      { s: { r: 4, c: 2 }, e: { r: 5, c: 2 } },
+      { s: { r: legendRow, c: guruCol }, e: { r: legendRow, c: guruCol + 1 } },
+      { s: { r: legendRow, c: mapelCol }, e: { r: legendRow, c: mapelCol + 1 } },
+      { s: { r: legendRow, c: piketCol }, e: { r: legendRow, c: piketCol + 2 } },
+    ];
+    JADWAL_KELAS.forEach((k, i) => { const col = 3 + i * 2; merges.push({ s: { r: 4, c: col }, e: { r: 4, c: col + 1 } }); });
+    let r = 6;
+    JADWAL_HARI.forEach(() => { merges.push({ s: { r, c: 0 }, e: { r: r + 1, c: 0 } }); r += 2; });
+    ws["!merges"] = merges;
+    XLSX.utils.book_append_sheet(wb, ws, "Jadwal Putra");
+  }
+
+  // ── Jadwal Putri: full names (no legend needed), Guru Piket attached as one more
+  // column using the same hari/jam rows, mirroring the print layout ──
+  {
+    if (putriKelas.length === 0) {
+      const ws = XLSX.utils.aoa_to_sheet([["Belum ada kelas Putri di CL (tambahkan lewat tab Kelas)."]]);
+      XLSX.utils.book_append_sheet(wb, ws, "Jadwal Putri");
+    } else {
+      const NC = 3 + putriKelas.length * 2 + 1;
+      const header1 = ["HARI", "JAM KE", "WAKTU"];
+      putriKelas.forEach((k) => header1.push(k.label, ""));
+      header1.push("GURU PIKET");
+      const header2 = ["", "", ""];
+      putriKelas.forEach(() => header2.push("Guru", "Mapel"));
+      header2.push("");
+      const dataRows = [];
+      JADWAL_HARI.forEach((hari) => JADWAL_JAM.forEach((jam, ji) => {
+        const row = [ji === 0 ? hari : "", jam.kode, jam.waktu];
+        putriKelas.forEach((k) => {
+          const cell = JADWAL.gridPutri?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+          row.push(cell.g ? (guruByKode[cell.g]?.nama || cell.g) : "", cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "");
+        });
+        row.push(JADWAL.piketPutri?.[hari]?.[jam.kode] || "");
+        dataRows.push(row);
+      }));
+      const aoa = [...titleRows(NC), header1, header2, ...dataRows];
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws["!cols"] = [{ wch: 8 }, { wch: 6 }, { wch: 13 }, ...putriKelas.flatMap(() => [{ wch: 22 }, { wch: 16 }]), { wch: 16 }];
+      const merges = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: NC - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: NC - 1 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: NC - 1 } },
+        { s: { r: 4, c: 0 }, e: { r: 5, c: 0 } },
+        { s: { r: 4, c: 1 }, e: { r: 5, c: 1 } },
+        { s: { r: 4, c: 2 }, e: { r: 5, c: 2 } },
+        { s: { r: 4, c: NC - 1 }, e: { r: 5, c: NC - 1 } },
+      ];
+      putriKelas.forEach((k, i) => { const col = 3 + i * 2; merges.push({ s: { r: 4, c: col }, e: { r: 4, c: col + 1 } }); });
+      let r = 6;
+      JADWAL_HARI.forEach(() => { merges.push({ s: { r, c: 0 }, e: { r: r + 1, c: 0 } }); r += 2; });
+      ws["!merges"] = merges;
+      XLSX.utils.book_append_sheet(wb, ws, "Jadwal Putri");
+    }
+  }
 
   return wb;
 }
@@ -2225,6 +2262,19 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   const [newMapelNama, setNewMapelNama] = useState("");
   const [expandedGuru, setExpandedGuru] = useState(() => new Set());
 
+  // Actually filling in the grid (Jadwal Putra/Putri cells + Guru Piket) is buffered
+  // locally instead of writing straight to the synced JADWAL on every click — that's
+  // what makes Undo/Redo/Simpan meaningful. Master data (guru, mapel, ketentuan) stays
+  // auto-saved as before, edited from their own tabs. Mirrors AdminLembaga's local
+  // form + explicit "Simpan" pattern, just applied to the schedule grid instead.
+  const [draftGrid, setDraftGrid] = useState(() => ({ grid: JADWAL.grid, gridPutri: JADWAL.gridPutri, piketPutra: JADWAL.piketPutra, piketPutri: JADWAL.piketPutri }));
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [changeLog, setChangeLog] = useState([]);
+  const [showChangeLog, setShowChangeLog] = useState(true);
+
   const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
 
   // Accounts from "Penugasan Guru" (wali kelas and/or subject-teacher accounts) offered
@@ -2238,8 +2288,43 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   // any CL kelas not in the default KELAS_ORDER (e.g. aw1c, ws1pi, ...).
   const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}), [CL]);
 
-  const conflicts = useMemo(() => computeJadwalConflicts(JADWAL, putriKelas), [JADWAL, putriKelas]);
+  // Everything downstream (conflict detection, preview, print, Excel) reads this
+  // merged view so it always reflects the current on-screen draft, saved or not.
+  const liveJADWAL = { ...JADWAL, ...draftGrid };
+
+  const conflicts = useMemo(() => computeJadwalConflicts(liveJADWAL, putriKelas), [liveJADWAL, putriKelas]);
   const conflictCount = Object.keys(conflicts).length;
+
+  const pushHistory = () => { setUndoStack((s) => [...s.slice(-49), draftGrid]); setRedoStack([]); };
+  const logChange = (text) => setChangeLog((log) => [...log.slice(-199), { text, ts: Date.now() }]);
+  const undo = () => {
+    if (undoStack.length === 0) return;
+    setRedoStack((s) => [...s, draftGrid]);
+    setDraftGrid(undoStack[undoStack.length - 1]);
+    setUndoStack((s) => s.slice(0, -1));
+    setDirty(true);
+    logChange("↩️ Undo");
+  };
+  const redo = () => {
+    if (redoStack.length === 0) return;
+    setUndoStack((s) => [...s, draftGrid]);
+    setDraftGrid(redoStack[redoStack.length - 1]);
+    setRedoStack((s) => s.slice(0, -1));
+    setDirty(true);
+    logChange("↪️ Redo");
+  };
+  const saveDraft = () => {
+    setJADWAL((p) => ({ ...p, ...draftGrid }));
+    setDirty(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
 
   const addGuru = () => {
     const kode = newGuruKode.trim().toUpperCase();
@@ -2254,21 +2339,25 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   };
   const updateGuruKode = (i, val) => {
     const kode = val.trim().toUpperCase();
+    const old = JADWAL.guru[i];
+    if (!kode || (kode !== old.kode && JADWAL.guru.some((g) => g.kode === kode))) return;
     setJADWAL((p) => {
-      const old = p.guru[i];
-      if (!kode || (kode !== old.kode && p.guru.some((g) => g.kode === kode))) return p;
       const { grid, gridPutri, ketentuan } = jadwalRenameGuruKode(p, old.kode, kode);
       return { ...p, guru: p.guru.map((g, idx) => (idx === i ? { ...g, kode } : g)), grid, gridPutri, ketentuan };
     });
+    // keep the unsaved draft's cells pointing at the new kode too, or they'd silently
+    // reference a guru that no longer exists in the list
+    setDraftGrid((d) => ({ ...d, grid: jadwalRenameKode(d.grid, "g", old.kode, kode), gridPutri: jadwalRenameKode(d.gridPutri, "g", old.kode, kode) }));
   };
   const removeGuru = (i) => {
     const g = JADWAL.guru[i];
-    const n = jadwalCountUsage(JADWAL.grid, "g", g.kode) + jadwalCountUsage(JADWAL.gridPutri, "g", g.kode, putriKelas);
+    const n = jadwalCountUsage(draftGrid.grid, "g", g.kode) + jadwalCountUsage(draftGrid.gridPutri, "g", g.kode, putriKelas);
     if (!window.confirm(n > 0 ? `Kode guru "${g.kode}" (${g.nama}) dipakai di ${n} sel jadwal. Hapus tetap? Sel tersebut akan dikosongkan.` : `Hapus guru "${g.nama}"?`)) return;
     setJADWAL((p) => {
       const { grid, gridPutri, ketentuan } = jadwalRenameGuruKode(p, g.kode, "");
       return { ...p, guru: p.guru.filter((_, idx) => idx !== i), grid, gridPutri, ketentuan };
     });
+    setDraftGrid((d) => ({ ...d, grid: jadwalRenameKode(d.grid, "g", g.kode, ""), gridPutri: jadwalRenameKode(d.gridPutri, "g", g.kode, "") }));
   };
 
   const setKelasBoleh = (kode, kelasKode, checked) => {
@@ -2342,74 +2431,81 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   };
   const updateMapelKode = (i, val) => {
     const kode = val.trim();
-    setJADWAL((p) => {
-      const old = p.mapel[i];
-      if (!kode || (kode !== old.kode && p.mapel.some((m) => m.kode === kode))) return p;
-      return {
-        ...p,
-        mapel: p.mapel.map((m, idx) => (idx === i ? { ...m, kode } : m)),
-        grid: jadwalRenameKode(p.grid, "m", old.kode, kode),
-        gridPutri: jadwalRenameKode(p.gridPutri, "m", old.kode, kode),
-      };
-    });
+    const old = JADWAL.mapel[i];
+    if (!kode || (kode !== old.kode && JADWAL.mapel.some((m) => m.kode === kode))) return;
+    setJADWAL((p) => ({
+      ...p,
+      mapel: p.mapel.map((m, idx) => (idx === i ? { ...m, kode } : m)),
+      grid: jadwalRenameKode(p.grid, "m", old.kode, kode),
+      gridPutri: jadwalRenameKode(p.gridPutri, "m", old.kode, kode),
+      ketentuan: jadwalRenameMapelInKetentuan(p.ketentuan, old.kode, kode),
+    }));
+    setDraftGrid((d) => ({ ...d, grid: jadwalRenameKode(d.grid, "m", old.kode, kode), gridPutri: jadwalRenameKode(d.gridPutri, "m", old.kode, kode) }));
   };
   const removeMapel = (i) => {
     const m = JADWAL.mapel[i];
-    const n = jadwalCountUsage(JADWAL.grid, "m", m.kode) + jadwalCountUsage(JADWAL.gridPutri, "m", m.kode, putriKelas);
+    const n = jadwalCountUsage(draftGrid.grid, "m", m.kode) + jadwalCountUsage(draftGrid.gridPutri, "m", m.kode, putriKelas);
     if (!window.confirm(n > 0 ? `Kode mapel "${m.kode}" (${m.nama}) dipakai di ${n} sel jadwal. Hapus tetap? Sel tersebut akan dikosongkan.` : `Hapus mata pelajaran "${m.nama}"?`)) return;
     setJADWAL((p) => ({
       ...p,
       mapel: p.mapel.filter((_, idx) => idx !== i),
       grid: jadwalRenameKode(p.grid, "m", m.kode, ""),
       gridPutri: jadwalRenameKode(p.gridPutri, "m", m.kode, ""),
+      ketentuan: jadwalRenameMapelInKetentuan(p.ketentuan, m.kode, ""),
     }));
+    setDraftGrid((d) => ({ ...d, grid: jadwalRenameKode(d.grid, "m", m.kode, ""), gridPutri: jadwalRenameKode(d.gridPutri, "m", m.kode, "") }));
   };
 
+  const kelasLabelOf = (kelasKode) => JADWAL_KELAS.find((k) => k.kode === kelasKode)?.label || putriKelas.find((k) => k.kode === kelasKode)?.label || kelasKode;
   const setCell = (hari, jamKode, kelasKode, field, val) => {
-    setJADWAL((p) => {
-      const grid = { ...p.grid };
-      const hariObj = { ...(grid[hari] || {}) };
-      const jamObj = { ...(hariObj[jamKode] || {}) };
-      const cell = { ...(jamObj[kelasKode] || { g: "", m: "" }), [field]: val };
-      jamObj[kelasKode] = cell;
-      hariObj[jamKode] = jamObj;
-      grid[hari] = hariObj;
-      return { ...p, grid };
-    });
+    const oldCell = draftGrid.grid?.[hari]?.[jamKode]?.[kelasKode] || { g: "", m: "" };
+    const grid = { ...draftGrid.grid };
+    const hariObj = { ...(grid[hari] || {}) };
+    const jamObj = { ...(hariObj[jamKode] || {}) };
+    jamObj[kelasKode] = { ...oldCell, [field]: val };
+    hariObj[jamKode] = jamObj;
+    grid[hari] = hariObj;
+    pushHistory();
+    setDraftGrid((d) => ({ ...d, grid }));
+    setDirty(true);
+    logChange(`Jadwal Putra · ${kelasLabelOf(kelasKode)} · ${hari} Jam ${jamKode}: ${field === "g" ? "Guru" : "Mapel"} "${oldCell[field] || "-"}" → "${val || "-"}"`);
   };
   const setCellPutri = (hari, jamKode, kelasKode, field, val) => {
-    setJADWAL((p) => {
-      const gridPutri = { ...(p.gridPutri || {}) };
-      const hariObj = { ...(gridPutri[hari] || {}) };
-      const jamObj = { ...(hariObj[jamKode] || {}) };
-      const cell = { ...(jamObj[kelasKode] || { g: "", m: "" }), [field]: val };
-      jamObj[kelasKode] = cell;
-      hariObj[jamKode] = jamObj;
-      gridPutri[hari] = hariObj;
-      return { ...p, gridPutri };
-    });
+    const oldCell = draftGrid.gridPutri?.[hari]?.[jamKode]?.[kelasKode] || { g: "", m: "" };
+    const gridPutri = { ...draftGrid.gridPutri };
+    const hariObj = { ...(gridPutri[hari] || {}) };
+    const jamObj = { ...(hariObj[jamKode] || {}) };
+    jamObj[kelasKode] = { ...oldCell, [field]: val };
+    hariObj[jamKode] = jamObj;
+    gridPutri[hari] = hariObj;
+    pushHistory();
+    setDraftGrid((d) => ({ ...d, gridPutri }));
+    setDirty(true);
+    logChange(`Jadwal Putri · ${kelasLabelOf(kelasKode)} · ${hari} Jam ${jamKode}: ${field === "g" ? "Guru" : "Mapel"} "${oldCell[field] || "-"}" → "${val || "-"}"`);
   };
   const setPiket = (which, hari, jamKode, val) => {
-    setJADWAL((p) => {
-      const key = which === "putra" ? "piketPutra" : "piketPutri";
-      const piket = { ...(p[key] || {}) };
-      const hariObj = { ...(piket[hari] || {}) };
-      hariObj[jamKode] = val;
-      piket[hari] = hariObj;
-      return { ...p, [key]: piket };
-    });
+    const key = which === "putra" ? "piketPutra" : "piketPutri";
+    const oldVal = draftGrid[key]?.[hari]?.[jamKode] || "";
+    const piket = { ...draftGrid[key] };
+    const hariObj = { ...(piket[hari] || {}) };
+    hariObj[jamKode] = val;
+    piket[hari] = hariObj;
+    pushHistory();
+    setDraftGrid((d) => ({ ...d, [key]: piket }));
+    setDirty(true);
+    logChange(`Guru Piket ${which === "putra" ? "Putra" : "Putri"} · ${hari} Jam ${jamKode}: "${oldVal || "-"}" → "${val || "-"}"`);
   };
 
-  const jadwalHTML = useMemo(() => buildJadwalHTML(JADWAL, LEMBAGA, SEM, putriKelas, false), [JADWAL, LEMBAGA, SEM, putriKelas]);
+  const jadwalHTML = buildJadwalHTML(liveJADWAL, LEMBAGA, SEM, putriKelas, false);
   const doPrint = () => {
-    const html = buildJadwalHTML(JADWAL, LEMBAGA, SEM, putriKelas, true);
+    const html = buildJadwalHTML(liveJADWAL, LEMBAGA, SEM, putriKelas, true);
     const win = window.open("", "_blank");
     if (!win) { alert("Popup diblokir browser. Izinkan popup untuk mencetak."); return; }
     win.document.write(html);
     win.document.close();
   };
   const doExcel = () => {
-    const wb = buildJadwalExcel(JADWAL, LEMBAGA, SEM, putriKelas);
+    const wb = buildJadwalExcel(liveJADWAL, LEMBAGA, SEM, putriKelas);
     XLSX.writeFile(wb, `Jadwal_Pelajaran_${SEM?.tipe === "ganjil" ? "Ganjil" : "Genap"}_${(SEM?.tahun || "").replace("/", "-")}.xlsx`);
   };
 
@@ -2427,10 +2523,35 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
 
       {tab === "jadwal" && (
         <>
-          <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Isi kode guru & kode mapel di tiap sel. Tambah/ubah daftar guru dan mata pelajaran di tab "Guru & Mapel", atur ketentuan di tab "Ketentuan Guru".</p>
-          {conflictCount > 0 && (
-            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", marginBottom: "10px", fontWeight: 500 }}>
+          <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Isi kode guru & kode mapel di tiap sel. Tambah/ubah daftar guru dan mata pelajaran di tab "Guru & Mapel", atur ketentuan di tab "Ketentuan Guru". Perubahan di sini bersifat sementara sampai diklik "Simpan".</p>
+          {conflictCount > 0 ? (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", marginBottom: "8px", fontWeight: 500 }}>
               ⚠️ {conflictCount} sel bentrok terdeteksi (guru mengajar dobel, atau di luar ketentuannya, lintas Jadwal Putra maupun Putri) — sel bergaris merah. Arahkan kursor ke sel untuk detail.
+            </div>
+          ) : (
+            <div style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", color: "#065f46", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", marginBottom: "8px", fontWeight: 500 }}>
+              ✓ Tidak ada bentrok terdeteksi.
+            </div>
+          )}
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
+            <button onClick={undo} disabled={undoStack.length === 0} style={{ padding: "7px 14px", background: undoStack.length ? "#f3f4f6" : "#f9fafb", color: undoStack.length ? "#374151" : "#d1d5db", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", cursor: undoStack.length ? "pointer" : "not-allowed" }}>↩️ Undo</button>
+            <button onClick={redo} disabled={redoStack.length === 0} style={{ padding: "7px 14px", background: redoStack.length ? "#f3f4f6" : "#f9fafb", color: redoStack.length ? "#374151" : "#d1d5db", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", cursor: redoStack.length ? "pointer" : "not-allowed" }}>↪️ Redo</button>
+            <GreenBtn onClick={saveDraft} style={dirty ? {} : { opacity: 0.5, cursor: "default" }}>💾 Simpan</GreenBtn>
+            {saved && <span style={{ color: "#065f46", fontSize: "12px", fontWeight: 500 }}>✓ Tersimpan</span>}
+            {dirty && !saved && <span style={{ color: "#d97706", fontSize: "12px", fontWeight: 500 }}>● Ada perubahan belum disimpan</span>}
+            {!showChangeLog && changeLog.length > 0 && (
+              <button onClick={() => setShowChangeLog(true)} style={{ marginLeft: "auto", padding: "6px 12px", background: "#eff6ff", color: "#1e40af", border: "none", borderRadius: "8px", fontSize: "11px", cursor: "pointer" }}>📋 Lihat riwayat perubahan ({changeLog.length})</button>
+            )}
+          </div>
+
+          {showChangeLog && changeLog.length > 0 && (
+            <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", padding: "10px 12px", marginBottom: "14px", position: "relative" }}>
+              <button onClick={() => setShowChangeLog(false)} title="Tutup" style={{ position: "absolute", top: "8px", right: "10px", background: "none", border: "none", cursor: "pointer", fontSize: "13px", color: "#6b7280" }}>✕</button>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "#1e40af", marginBottom: "6px" }}>📋 Riwayat Perubahan</div>
+              <div style={{ maxHeight: "140px", overflowY: "auto", fontSize: "11px", color: "#374151", display: "flex", flexDirection: "column", gap: "3px" }}>
+                {changeLog.slice().reverse().map((c, i) => <div key={i}>{c.text}</div>)}
+              </div>
             </div>
           )}
 
@@ -2455,7 +2576,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                     <td style={tdStyle}>{jam.kode}</td>
                     <td style={tdStyle}>{jam.waktu}</td>
                     {JADWAL_KELAS.map((k) => {
-                      const cell = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+                      const cell = draftGrid.grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
                       const conflict = conflicts[`putra|${hari}|${jam.kode}|${k.kode}`];
                       return (
                         <td key={k.kode} style={{ ...tdStyle, background: colorOf(cell.g), padding: "3px", outline: conflict ? "2px solid #dc2626" : "none", outlineOffset: "-2px" }} title={conflict ? conflict.join(" | ") : undefined}>
@@ -2467,11 +2588,11 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                               if (allowed && allowed.length === 1) setCell(hari, jam.kode, k.kode, "m", allowed[0]);
                             }} style={cellSelect} title="Kode guru">
                               <option value="">-</option>
-                              {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode}</option>)}
+                              {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode} — {g.nama}</option>)}
                             </select>
                             <select value={cell.m} onChange={(e) => setCell(hari, jam.kode, k.kode, "m", e.target.value)} style={cellSelect} title="Kode mapel">
                               <option value="">-</option>
-                              {mapelOptionsFor(cell.g, k.kode).map((m) => <option key={m.kode} value={m.kode}>{m.kode}</option>)}
+                              {mapelOptionsFor(cell.g, k.kode).map((m) => <option key={m.kode} value={m.kode}>{m.kode} — {m.nama}</option>)}
                             </select>
                             {conflict && <span style={{ color: "#dc2626", fontSize: "10px" }}>⚠</span>}
                           </div>
@@ -2483,10 +2604,10 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
               </tbody>
             </table>
           </div>
-          <PiketEditor title="🎫 Guru Piket — Putra" piket={JADWAL.piketPutra} onChange={(h, j, v) => setPiket("putra", h, j, v)} />
+          <PiketEditor title="🎫 Guru Piket — Putra" piket={draftGrid.piketPutra} onChange={(h, j, v) => setPiket("putra", h, j, v)} />
 
           <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#111827", margin: "28px 0 4px" }}>Jadwal Putri</h3>
-          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0 }}>Kelas di sini mengikuti kelas Putri yang terdaftar di Dashboard → Rekap Per Kelas (kelas di luar kelompok default). Wustho Putri (WS I PI / WS II PI) tetap ada di tabel Jadwal Putra di atas.</p>
+          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0 }}>Kelas di sini mengikuti kelas Putri yang terdaftar di Dashboard → Rekap Per Kelas (kelas di luar kelompok default). Wustho Putri (WS I PI / WS II PI) tetap ada di tabel Jadwal Putra di atas. Guru Piket Putri menempel langsung sebagai kolom terakhir, mengikuti hari & jam jadwal ini.</p>
           {putriKelas.length === 0 ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
               Belum ada kelas Putri. Tambahkan kelas baru (kode di luar aw1a/aw1b/aw2a/aw2b/aw3a/ws1/ws2) lewat tab "🏫 Kelas" — otomatis akan muncul di sini dan di Rekap Per Kelas.
@@ -2500,6 +2621,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                     <th style={thStyle} rowSpan={2}>Jam</th>
                     <th style={thStyle} rowSpan={2}>Waktu</th>
                     {jadwalGroups(putriKelas).map((grp, i) => <th key={i} style={thStyle} colSpan={grp.count}>Kelas {grp.grup}</th>)}
+                    <th style={thStyle} rowSpan={2}>Guru Piket</th>
                   </tr>
                   <tr>
                     {putriKelas.map((k) => <th key={k.kode} style={thStyle}>{k.label}</th>)}
@@ -2512,7 +2634,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                       <td style={tdStyle}>{jam.kode}</td>
                       <td style={tdStyle}>{jam.waktu}</td>
                       {putriKelas.map((k) => {
-                        const cell = JADWAL.gridPutri?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+                        const cell = draftGrid.gridPutri?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
                         const conflict = conflicts[`putri|${hari}|${jam.kode}|${k.kode}`];
                         return (
                           <td key={k.kode} style={{ ...tdStyle, background: colorOf(cell.g), padding: "3px", outline: conflict ? "2px solid #dc2626" : "none", outlineOffset: "-2px" }} title={conflict ? conflict.join(" | ") : undefined}>
@@ -2524,24 +2646,26 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                                 if (allowed && allowed.length === 1) setCellPutri(hari, jam.kode, k.kode, "m", allowed[0]);
                               }} style={cellSelect} title="Kode guru">
                                 <option value="">-</option>
-                                {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode}</option>)}
+                                {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode} — {g.nama}</option>)}
                               </select>
                               <select value={cell.m} onChange={(e) => setCellPutri(hari, jam.kode, k.kode, "m", e.target.value)} style={cellSelect} title="Kode mapel">
                                 <option value="">-</option>
-                                {mapelOptionsFor(cell.g, k.kode).map((m) => <option key={m.kode} value={m.kode}>{m.kode}</option>)}
+                                {mapelOptionsFor(cell.g, k.kode).map((m) => <option key={m.kode} value={m.kode}>{m.kode} — {m.nama}</option>)}
                               </select>
                               {conflict && <span style={{ color: "#dc2626", fontSize: "10px" }}>⚠</span>}
                             </div>
                           </td>
                         );
                       })}
+                      <td style={{ ...tdStyle, padding: "3px" }}>
+                        <input type="text" value={draftGrid.piketPutri?.[hari]?.[jam.kode] || ""} onChange={(e) => setPiket("putri", hari, jam.kode, e.target.value)} placeholder="Nama" style={{ width: "90px", padding: "3px 5px", border: "1px solid #d1d5db", borderRadius: "4px", fontSize: "10px", boxSizing: "border-box" }} />
+                      </td>
                     </tr>
                   )))}
                 </tbody>
               </table>
             </div>
           )}
-          <PiketEditor title="🎫 Guru Piket — Putri" piket={JADWAL.piketPutri} onChange={(h, j, v) => setPiket("putri", h, j, v)} />
         </>
       )}
 
