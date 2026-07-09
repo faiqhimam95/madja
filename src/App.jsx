@@ -97,6 +97,126 @@ const DEFAULT_LEMBAGA = {
 };
 const kepalaOf = (lembaga, isWustho) => (isWustho ? lembaga.kepalaWustho : lembaga.kepalaAwwaliyah) || "-";
 
+// "Susun Jadwal" — Super Admin builds/prints the weekly class timetable. This uses its
+// own master data (named teachers + subject codes) rather than the grading system's
+// per-subject guru accounts, since a real timetable needs individually named teachers
+// per period slot, not one account per subject.
+const JADWAL_HARI = ["SABTU", "AHAD", "SENIN", "SELASA", "RABU", "KAMIS"];
+const JADWAL_JAM = [
+  { kode: "I", waktu: "05.30 - 06.30" },
+  { kode: "II", waktu: "06.30 - 07.30" },
+];
+const JADWAL_KELAS = [
+  { kode: "awia", label: "AW I A", grup: "Awwaliyah" },
+  { kode: "awib", label: "AW IB", grup: "Awwaliyah" },
+  { kode: "awiia", label: "AW IIA", grup: "Awwaliyah" },
+  { kode: "awiib", label: "AW IIB", grup: "Awwaliyah" },
+  { kode: "awiiia", label: "AW IIIA", grup: "Awwaliyah" },
+  { kode: "wsipa", label: "WS I PA", grup: "Wustho" },
+  { kode: "wsiipa", label: "WS II PA", grup: "Wustho" },
+  { kode: "wsipi", label: "WS I PI", grup: "Wustho" },
+  { kode: "wsiipi", label: "WS II PI", grup: "Wustho" },
+];
+const JADWAL_PALETTE = ["#fde68a", "#bbf7d0", "#bfdbfe", "#fbcfe8", "#ddd6fe", "#fed7aa", "#a7f3d0", "#fecaca", "#c7d2fe", "#fef08a", "#99f6e4", "#e9d5ff", "#fca5a5", "#bae6fd", "#d9f99d", "#f5d0fe", "#fdba74"];
+
+const DEFAULT_JADWAL_GURU = [
+  { kode: "A", nama: "KH. Moh. Al-Faiz, LC., M.Ag." },
+  { kode: "B", nama: "Ust. Agus Ashaeri, S.H.I" },
+  { kode: "C", nama: "Ust. Dalilun Nafilin, S.Ag." },
+  { kode: "D", nama: "Ust. M. Syariful Umam, S.H" },
+  { kode: "E", nama: "Ust. Idris, S.Pd." },
+  { kode: "F", nama: "Ust. Faiq Al-Himam, S.H" },
+  { kode: "G", nama: "Ust. M. Badrus Salam, S.Pd." },
+  { kode: "H", nama: "Ust. A. Syaifuddin, S.Pd" },
+  { kode: "I", nama: "Ust. A. Mahalli, S.Pd" },
+  { kode: "J", nama: "Ust. Yasir Fatoni, S.Pd." },
+  { kode: "K", nama: "Ust. M. Danil, S.I.Pust" },
+  { kode: "L", nama: "Ust. Faizurrofiq Lutfil Huda, S.E" },
+  { kode: "M", nama: "Ust. Zainul Alam" },
+  { kode: "O", nama: "Ust. Tajous Subqi" },
+  { kode: "P", nama: "Ust. Andis Setiawan" },
+  { kode: "Q", nama: "Ust. Zainur Roziqin" },
+  { kode: "R", nama: "Ust. Itqon Mahsuzhi, S.Ag" },
+];
+const DEFAULT_JADWAL_MAPEL = [
+  { kode: "1", nama: "TAFSIR" },
+  { kode: "2", nama: "FIQH" },
+  { kode: "3", nama: "USHUL FIQH" },
+  { kode: "4", nama: "QAWAID FIQH" },
+  { kode: "5", nama: "BALAGHAH" },
+  { kode: "6", nama: "HADITS" },
+  { kode: "7", nama: "ULUMUL HADITS" },
+  { kode: "8", nama: "NAHWU" },
+  { kode: "9", nama: "SHOROF" },
+  { kode: "10", nama: "AKHLAQ" },
+  { kode: "11", nama: "TAUHID" },
+  { kode: "12", nama: "ASWAJA" },
+  { kode: "13", nama: "TARIKH" },
+  { kode: "14", nama: "BMK" },
+  { kode: "15", nama: "IMLA'" },
+  { kode: "16", nama: "I'LAL" },
+];
+const jc = (g, m) => ({ g, m: String(m) });
+// Seeded from the Semester Genap 2025/2026 timetable so the panel is useful immediately;
+// every cell stays freely editable afterwards.
+const DEFAULT_JADWAL = {
+  guru: DEFAULT_JADWAL_GURU,
+  mapel: DEFAULT_JADWAL_MAPEL,
+  grid: {
+    SABTU: {
+      I: { awia: jc("O", 11), awib: jc("P", 10), awiia: jc("M", 8), awiib: jc("L", 2), awiiia: jc("D", 9), wsipa: jc("C", 6), wsiipa: jc("J", 6), wsipi: jc("F", 8), wsiipi: jc("Q", 3) },
+      II: { awia: jc("P", 10), awib: jc("D", 2), awiia: jc("L", 2), awiib: jc("K", 12), awiiia: jc("M", 8), wsipa: jc("F", 8), wsiipa: jc("H", 3), wsipi: jc("C", 6), wsiipi: jc("J", 2) },
+    },
+    AHAD: {
+      I: { awia: jc("D", 2), awib: jc("P", 10), awiia: jc("B", 10), awiib: jc("R", 11), awiiia: jc("L", 2), wsipa: jc("J", 2), wsiipa: jc("A", 1), wsipi: jc("F", 2), wsiipi: jc("A", 1) },
+      II: { awia: jc("P", 10), awib: jc("D", 2), awiia: jc("R", 11), awiib: jc("M", 8), awiiia: jc("K", 12), wsipa: jc("Q", 3), wsiipa: jc("A", 11), wsipi: jc("H", 11), wsiipi: jc("A", 11) },
+    },
+    SENIN: {
+      I: { awia: jc("E", 15), awib: jc("D", 2), awiia: jc("M", 8), awiib: jc("L", 13), awiiia: jc("B", 10), wsipa: jc("J", 2), wsiipa: jc("I", 8), wsipi: jc("F", 8), wsiipi: jc("C", 10) },
+      II: { awia: jc("D", 2), awib: jc("E", 15), awiia: jc("L", 2), awiib: jc("G", 10), awiiia: jc("R", 16), wsipa: jc("M", 11), wsiipa: jc("J", 2), wsipi: jc("H", 9), wsiipi: jc("I", 8) },
+    },
+    SELASA: {
+      I: { awia: jc("D", 2), awib: jc("E", 5), awiia: jc("M", 8), awiib: jc("R", 11), awiiia: jc("L", 2), wsipa: jc("B", 10), wsiipa: jc("J", 10), wsipi: jc("F", 2), wsiipi: jc("I", 8) },
+      II: { awia: jc("E", 15), awib: jc("M", 11), awiia: jc("K", 12), awiib: jc("D", 9), awiiia: jc("C", 14), wsipa: jc("F", 8), wsiipa: jc("H", 3), wsipi: jc("Q", 3), wsiipi: jc("I", 14) },
+    },
+    RABU: {
+      I: { awia: jc("O", 11), awib: jc("K", 13), awiia: jc("D", 9), awiib: jc("M", 8), awiiia: jc("B", 10), wsipa: jc("L", 13), wsiipa: jc("J", 2), wsipi: jc("C", 10), wsiipi: jc("I", 13) },
+      II: { awia: jc("K", 13), awib: jc("M", 11), awiia: jc("R", 11), awiib: jc("G", 10), awiiia: jc("D", 9), wsipa: jc("H", 9), wsiipa: jc("I", 8), wsipi: jc("L", 13), wsiipi: jc("F", 6) },
+    },
+    KAMIS: {
+      I: { awia: jc("O", 11), awib: jc("K", 13), awiia: jc("B", 10), awiib: jc("L", 2), awiiia: jc("M", 8), wsipa: jc("A", 1), wsiipa: jc("I", 14), wsipi: jc("A", 1), wsiipi: jc("Q", 3) },
+      II: { awia: jc("K", 13), awib: jc("M", 11), awiia: jc("L", 13), awiib: jc("D", 9), awiiia: jc("R", 11), wsipa: jc("H", 14), wsiipa: jc("I", 13), wsipi: jc("C", 14), wsiipi: jc("J", 2) },
+    },
+  },
+};
+function jadwalGuruColor(JADWAL, kode) {
+  const idx = (JADWAL.guru || []).findIndex((g) => g.kode === kode);
+  return idx === -1 ? "#f9fafb" : JADWAL_PALETTE[idx % JADWAL_PALETTE.length];
+}
+function jadwalRenameKode(grid, field, oldKode, newKode) {
+  if (oldKode === newKode) return grid;
+  const next = {};
+  Object.keys(grid || {}).forEach((h) => {
+    next[h] = {};
+    Object.keys(grid[h] || {}).forEach((j) => {
+      next[h][j] = {};
+      Object.keys(grid[h][j] || {}).forEach((k) => {
+        const cell = grid[h][j][k];
+        next[h][j][k] = cell && cell[field] === oldKode ? { ...cell, [field]: newKode } : cell;
+      });
+    });
+  });
+  return next;
+}
+function jadwalCountUsage(grid, field, kode) {
+  let n = 0;
+  JADWAL_HARI.forEach((h) => JADWAL_JAM.forEach((j) => JADWAL_KELAS.forEach((k) => {
+    const cell = grid?.[h]?.[j.kode]?.[k.kode];
+    if (cell && cell[field] === kode) n++;
+  })));
+  return n;
+}
+
 const KELAS_ORDER = ["aw1a","aw1b","aw2a","aw2b","aw3a","ws1","ws2"];
 const sortedKelas = (cl) => Object.keys(cl).sort((a, b) => {
   const ai = KELAS_ORDER.indexOf(a), bi = KELAS_ORDER.indexOf(b);
@@ -344,6 +464,127 @@ th{background:#f0f0f0;text-align:center;font-size:12.5px}
 ${pages.join("\n")}
 <script>window.onload=()=>{window.print()}<\/script>
 </body></html>`;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildJadwalHTML(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM) {
+  const semTipeLabel = SEM?.tipe === "ganjil" ? "Ganjil" : "Genap";
+  const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
+  const awCount = JADWAL_KELAS.filter((k) => k.grup === "Awwaliyah").length;
+  const wsCount = JADWAL_KELAS.filter((k) => k.grup === "Wustho").length;
+
+  const rows = JADWAL_HARI.map((hari) => JADWAL_JAM.map((jam, ji) => `
+    <tr>
+      ${ji === 0 ? `<td rowspan="2" class="c b">${hari}</td>` : ""}
+      <td class="c">${jam.kode}</td>
+      <td class="c">${jam.waktu}</td>
+      ${JADWAL_KELAS.map((k) => {
+        const cell = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+        return `<td class="c" style="background:${colorOf(cell.g)}"><b>${cell.g || "-"}</b>${cell.m ? " " + cell.m : ""}</td>`;
+      }).join("")}
+    </tr>`).join("")).join("");
+
+  const guruRows = JADWAL.guru.map((g) => `<tr><td class="c b" style="background:${colorOf(g.kode)}">${g.kode}</td><td>${g.nama}</td></tr>`).join("");
+  const mapelRows = JADWAL.mapel.map((m) => `<tr><td class="c b">${m.kode}</td><td>${m.nama}</td></tr>`).join("");
+
+  return `<!DOCTYPE html><html lang=id><head><meta charset=UTF-8><title>Jadwal Pelajaran — ${LEMBAGA.namaSingkat}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:11px;background:#fff}
+@page{size:A4 landscape;margin:8mm}
+@media screen{.wrap{max-width:290mm;margin:10mm auto 20mm;padding:6mm;border:1px solid #ccc;background:white}}
+.ttl{text-align:center;font-weight:bold;font-size:14px}
+.sub{text-align:center;font-size:12px;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;margin-bottom:14px}
+th,td{border:1px solid #000;padding:3px 4px;font-size:10.5px}
+th{background:#e5e7eb;text-align:center}
+.c{text-align:center}
+.b{font-weight:bold}
+.legend{display:flex;gap:16px}
+.legend table{width:auto;flex:1}
+</style></head><body>
+<div class="wrap">
+  <div class="ttl">JADWAL MATA PELAJARAN SEMESTER ${semTipeLabel.toUpperCase()}</div>
+  <div class="ttl">${(LEMBAGA.namaLembaga || "").toUpperCase()} ${LEMBAGA.namaPondok || ""}</div>
+  <div class="sub">TAHUN DIRASAH ${SEM?.tahun || ""}</div>
+  <table>
+    <thead>
+      <tr><th rowspan="2">HARI</th><th rowspan="2">JAM KE</th><th rowspan="2">WAKTU</th><th colspan="${awCount}">KELAS AWWALIYAH</th><th colspan="${wsCount}">KELAS WUSTHO</th></tr>
+      <tr>${JADWAL_KELAS.map((k) => `<th>${k.label}</th>`).join("")}</tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="legend">
+    <table><thead><tr><th colspan="2">KODE GURU</th></tr></thead><tbody>${guruRows}</tbody></table>
+    <table><thead><tr><th colspan="2">KODE MAPEL</th></tr></thead><tbody>${mapelRows}</tbody></table>
+  </div>
+</div>
+<script>window.onload=()=>{window.print()}<\/script>
+</body></html>`;
+}
+
+function buildJadwalExcel(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM) {
+  const wb = XLSX.utils.book_new();
+  const semTipeLabel = SEM?.tipe === "ganjil" ? "Ganjil" : "Genap";
+  const NC = 3 + JADWAL_KELAS.length * 2;
+  const bl = () => Array(NC).fill("");
+  const header1 = ["HARI", "JAM KE", "WAKTU"];
+  JADWAL_KELAS.forEach((k) => header1.push(k.label, ""));
+  const header2 = ["", "", ""];
+  JADWAL_KELAS.forEach(() => header2.push("Guru", "Mapel"));
+
+  const dataRows = [];
+  JADWAL_HARI.forEach((hari) => {
+    JADWAL_JAM.forEach((jam, ji) => {
+      const row = [ji === 0 ? hari : "", jam.kode, jam.waktu];
+      JADWAL_KELAS.forEach((k) => {
+        const cell = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+        row.push(cell.g || "", cell.m || "");
+      });
+      dataRows.push(row);
+    });
+  });
+
+  const aoa = [
+    [`JADWAL MATA PELAJARAN SEMESTER ${semTipeLabel.toUpperCase()}`, ...Array(NC - 1).fill("")],
+    [(LEMBAGA.namaLembaga || "").toUpperCase(), ...Array(NC - 1).fill("")],
+    [`TAHUN DIRASAH ${SEM?.tahun || ""}`, ...Array(NC - 1).fill("")],
+    bl(),
+    header1,
+    header2,
+    ...dataRows,
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 8 }, { wch: 6 }, { wch: 13 }, ...JADWAL_KELAS.flatMap(() => [{ wch: 6 }, { wch: 6 }])];
+  const merges = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: NC - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: NC - 1 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: NC - 1 } },
+    { s: { r: 4, c: 0 }, e: { r: 5, c: 0 } },
+    { s: { r: 4, c: 1 }, e: { r: 5, c: 1 } },
+    { s: { r: 4, c: 2 }, e: { r: 5, c: 2 } },
+  ];
+  JADWAL_KELAS.forEach((k, i) => {
+    const col = 3 + i * 2;
+    merges.push({ s: { r: 4, c: col }, e: { r: 4, c: col + 1 } });
+  });
+  let r = 6;
+  JADWAL_HARI.forEach(() => { merges.push({ s: { r, c: 0 }, e: { r: r + 1, c: 0 } }); r += 2; });
+  ws["!merges"] = merges;
+  XLSX.utils.book_append_sheet(wb, ws, "Jadwal");
+
+  const legendAoa = [
+    ["KODE GURU", "NAMA GURU"],
+    ...JADWAL.guru.map((g) => [g.kode, g.nama]),
+    [],
+    ["KODE MAPEL", "NAMA MAPEL"],
+    ...JADWAL.mapel.map((m) => [m.kode, m.nama]),
+  ];
+  const ws2 = XLSX.utils.aoa_to_sheet(legendAoa);
+  ws2["!cols"] = [{ wch: 10 }, { wch: 34 }];
+  XLSX.utils.book_append_sheet(wb, ws2, "Kode Guru & Mapel");
+
+  return wb;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1765,7 +2006,228 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
   );
 }
 
-function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, archives, setArchives, LEMBAGA, setLEMBAGA, isSuperAdmin }) {
+function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM }) {
+  const [tab, setTab] = useState("jadwal");
+  const [newGuruKode, setNewGuruKode] = useState("");
+  const [newGuruNama, setNewGuruNama] = useState("");
+  const [newMapelKode, setNewMapelKode] = useState("");
+  const [newMapelNama, setNewMapelNama] = useState("");
+
+  const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
+
+  const addGuru = () => {
+    const kode = newGuruKode.trim().toUpperCase();
+    const nama = newGuruNama.trim();
+    if (!kode || !nama) return;
+    if (JADWAL.guru.some((g) => g.kode === kode)) { alert(`Kode guru "${kode}" sudah dipakai`); return; }
+    setJADWAL((p) => ({ ...p, guru: [...p.guru, { kode, nama }] }));
+    setNewGuruKode(""); setNewGuruNama("");
+  };
+  const updateGuruNama = (i, val) => {
+    setJADWAL((p) => ({ ...p, guru: p.guru.map((g, idx) => (idx === i ? { ...g, nama: val } : g)) }));
+  };
+  const updateGuruKode = (i, val) => {
+    const kode = val.trim().toUpperCase();
+    setJADWAL((p) => {
+      const old = p.guru[i];
+      if (!kode || (kode !== old.kode && p.guru.some((g) => g.kode === kode))) return p;
+      return { ...p, guru: p.guru.map((g, idx) => (idx === i ? { ...g, kode } : g)), grid: jadwalRenameKode(p.grid, "g", old.kode, kode) };
+    });
+  };
+  const removeGuru = (i) => {
+    const g = JADWAL.guru[i];
+    const n = jadwalCountUsage(JADWAL.grid, "g", g.kode);
+    if (!window.confirm(n > 0 ? `Kode guru "${g.kode}" (${g.nama}) dipakai di ${n} sel jadwal. Hapus tetap? Sel tersebut akan dikosongkan.` : `Hapus guru "${g.nama}"?`)) return;
+    setJADWAL((p) => ({ ...p, guru: p.guru.filter((_, idx) => idx !== i), grid: jadwalRenameKode(p.grid, "g", g.kode, "") }));
+  };
+
+  const addMapel = () => {
+    const kode = newMapelKode.trim();
+    const nama = newMapelNama.trim().toUpperCase();
+    if (!kode || !nama) return;
+    if (JADWAL.mapel.some((m) => m.kode === kode)) { alert(`Kode mapel "${kode}" sudah dipakai`); return; }
+    setJADWAL((p) => ({ ...p, mapel: [...p.mapel, { kode, nama }] }));
+    setNewMapelKode(""); setNewMapelNama("");
+  };
+  const updateMapelNama = (i, val) => {
+    setJADWAL((p) => ({ ...p, mapel: p.mapel.map((m, idx) => (idx === i ? { ...m, nama: val } : m)) }));
+  };
+  const updateMapelKode = (i, val) => {
+    const kode = val.trim();
+    setJADWAL((p) => {
+      const old = p.mapel[i];
+      if (!kode || (kode !== old.kode && p.mapel.some((m) => m.kode === kode))) return p;
+      return { ...p, mapel: p.mapel.map((m, idx) => (idx === i ? { ...m, kode } : m)), grid: jadwalRenameKode(p.grid, "m", old.kode, kode) };
+    });
+  };
+  const removeMapel = (i) => {
+    const m = JADWAL.mapel[i];
+    const n = jadwalCountUsage(JADWAL.grid, "m", m.kode);
+    if (!window.confirm(n > 0 ? `Kode mapel "${m.kode}" (${m.nama}) dipakai di ${n} sel jadwal. Hapus tetap? Sel tersebut akan dikosongkan.` : `Hapus mata pelajaran "${m.nama}"?`)) return;
+    setJADWAL((p) => ({ ...p, mapel: p.mapel.filter((_, idx) => idx !== i), grid: jadwalRenameKode(p.grid, "m", m.kode, "") }));
+  };
+
+  const setCell = (hari, jamKode, kelasKode, field, val) => {
+    setJADWAL((p) => {
+      const grid = { ...p.grid };
+      const hariObj = { ...(grid[hari] || {}) };
+      const jamObj = { ...(hariObj[jamKode] || {}) };
+      const cell = { ...(jamObj[kelasKode] || { g: "", m: "" }), [field]: val };
+      jamObj[kelasKode] = cell;
+      hariObj[jamKode] = jamObj;
+      grid[hari] = hariObj;
+      return { ...p, grid };
+    });
+  };
+
+  const doPrint = () => {
+    const html = buildJadwalHTML(JADWAL, LEMBAGA, SEM);
+    const win = window.open("", "_blank");
+    if (!win) { alert("Popup diblokir browser. Izinkan popup untuk mencetak."); return; }
+    win.document.write(html);
+    win.document.close();
+  };
+  const doExcel = () => {
+    const wb = buildJadwalExcel(JADWAL, LEMBAGA, SEM);
+    XLSX.writeFile(wb, `Jadwal_Pelajaran_${SEM?.tipe === "ganjil" ? "Ganjil" : "Genap"}_${(SEM?.tahun || "").replace("/", "-")}.xlsx`);
+  };
+
+  const cellSelect = { width: "34px", padding: "2px", border: "1px solid #d1d5db", borderRadius: "4px", fontSize: "10px" };
+  const thStyle = { border: "1px solid #d1d5db", padding: "5px 6px", background: "#f3f4f6", fontSize: "11px", fontWeight: 500, whiteSpace: "nowrap" };
+  const tdStyle = { border: "1px solid #d1d5db", padding: "4px 5px", fontSize: "11px", textAlign: "center", whiteSpace: "nowrap" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px" }}>
+        {[["jadwal", "🗓️ Jadwal"], ["master", "🧑‍🏫 Guru & Mapel"], ["cetak", "🖨️ Cetak & Export"]].map(([k, lbl]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#92400e" : "#6b7280" }}>{lbl}</button>
+        ))}
+      </div>
+
+      {tab === "jadwal" && (
+        <>
+          <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Isi kode guru & kode mapel di tiap sel. Tambah/ubah daftar guru dan mata pelajaran di tab "Guru & Mapel".</p>
+          <div style={{ overflowX: "auto", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "10px" }}>
+            <table style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={thStyle} rowSpan={2}>Hari</th>
+                  <th style={thStyle} rowSpan={2}>Jam</th>
+                  <th style={thStyle} rowSpan={2}>Waktu</th>
+                  <th style={thStyle} colSpan={JADWAL_KELAS.filter((k) => k.grup === "Awwaliyah").length}>Kelas Awwaliyah</th>
+                  <th style={thStyle} colSpan={JADWAL_KELAS.filter((k) => k.grup === "Wustho").length}>Kelas Wustho</th>
+                </tr>
+                <tr>
+                  {JADWAL_KELAS.map((k) => <th key={k.kode} style={thStyle}>{k.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {JADWAL_HARI.map((hari) => JADWAL_JAM.map((jam, ji) => (
+                  <tr key={hari + jam.kode}>
+                    {ji === 0 && <td style={{ ...tdStyle, fontWeight: 500 }} rowSpan={2}>{hari}</td>}
+                    <td style={tdStyle}>{jam.kode}</td>
+                    <td style={tdStyle}>{jam.waktu}</td>
+                    {JADWAL_KELAS.map((k) => {
+                      const cell = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+                      return (
+                        <td key={k.kode} style={{ ...tdStyle, background: colorOf(cell.g), padding: "3px" }}>
+                          <div style={{ display: "flex", gap: "2px", justifyContent: "center" }}>
+                            <select value={cell.g} onChange={(e) => setCell(hari, jam.kode, k.kode, "g", e.target.value)} style={cellSelect} title="Kode guru">
+                              <option value="">-</option>
+                              {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode}</option>)}
+                            </select>
+                            <select value={cell.m} onChange={(e) => setCell(hari, jam.kode, k.kode, "m", e.target.value)} style={cellSelect} title="Kode mapel">
+                              <option value="">-</option>
+                              {JADWAL.mapel.map((m) => <option key={m.kode} value={m.kode}>{m.kode}</option>)}
+                            </select>
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === "master" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+          <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "13px", fontWeight: 500 }}>Kode Guru — {JADWAL.guru.length}</span>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <input type="text" value={newGuruKode} onChange={(e) => setNewGuruKode(e.target.value)} placeholder="Kode" style={{ ...inputA, width: "56px" }} />
+                <input type="text" value={newGuruNama} onChange={(e) => setNewGuruNama(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addGuru()} placeholder="Nama guru" style={{ ...inputA, width: "160px" }} />
+                <GreenBtn onClick={addGuru} style={{ padding: "7px 12px", fontSize: "12px" }}>+ Tambah</GreenBtn>
+              </div>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+              <tbody>
+                {JADWAL.guru.map((g, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <td style={{ padding: "6px 8px", width: "48px" }}>
+                      <input type="text" value={g.kode} onChange={(e) => updateGuruKode(i, e.target.value)} style={{ ...inputA, background: colorOf(g.kode), textAlign: "center", fontWeight: 600 }} />
+                    </td>
+                    <td style={{ padding: "6px 8px" }}>
+                      <input type="text" value={g.nama} onChange={(e) => updateGuruNama(i, e.target.value)} style={inputA} />
+                    </td>
+                    <td style={{ padding: "6px 8px", width: "60px" }}>
+                      <RedBtn onClick={() => removeGuru(i)} style={{ padding: "5px 8px", fontSize: "11px" }}>Hapus</RedBtn>
+                    </td>
+                  </tr>
+                ))}
+                {JADWAL.guru.length === 0 && <tr><td colSpan={3} style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada guru.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "13px", fontWeight: 500 }}>Kode Mapel — {JADWAL.mapel.length}</span>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <input type="text" value={newMapelKode} onChange={(e) => setNewMapelKode(e.target.value)} placeholder="Kode" style={{ ...inputA, width: "56px" }} />
+                <input type="text" value={newMapelNama} onChange={(e) => setNewMapelNama(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addMapel()} placeholder="Nama mapel" style={{ ...inputA, width: "160px" }} />
+                <GreenBtn onClick={addMapel} style={{ padding: "7px 12px", fontSize: "12px" }}>+ Tambah</GreenBtn>
+              </div>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+              <tbody>
+                {JADWAL.mapel.map((m, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <td style={{ padding: "6px 8px", width: "48px" }}>
+                      <input type="text" value={m.kode} onChange={(e) => updateMapelKode(i, e.target.value)} style={{ ...inputA, textAlign: "center", fontWeight: 600 }} />
+                    </td>
+                    <td style={{ padding: "6px 8px" }}>
+                      <input type="text" value={m.nama} onChange={(e) => updateMapelNama(i, e.target.value)} style={inputA} />
+                    </td>
+                    <td style={{ padding: "6px 8px", width: "60px" }}>
+                      <RedBtn onClick={() => removeMapel(i)} style={{ padding: "5px 8px", fontSize: "11px" }}>Hapus</RedBtn>
+                    </td>
+                  </tr>
+                ))}
+                {JADWAL.mapel.length === 0 && <tr><td colSpan={3} style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada mata pelajaran.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === "cetak" && (
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "20px", textAlign: "center" }}>
+          <p style={{ fontSize: "13px", color: "#4b5563", marginTop: 0 }}>Cetak jadwal pelajaran (A4 landscape) atau unduh sebagai file Excel, lengkap dengan legenda kode guru & mata pelajaran.</p>
+          <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "10px" }}>
+            <GreenBtn onClick={doPrint}>🖨️ Cetak Jadwal</GreenBtn>
+            <button onClick={doExcel} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📥 Export Excel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, archives, setArchives, LEMBAGA, setLEMBAGA, JADWAL, setJADWAL, isSuperAdmin }) {
   const [tab, setTab] = useState("dashboard");
   const tabs = [
     ["dashboard", "📊 Dashboard"],
@@ -1774,7 +2236,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
     ["siswa", "🧑‍🎓 Data Siswa"],
     ["mapel", "📚 Mata Pelajaran"],
     ["guru", "🧑‍🏫 Penugasan Guru"],
-    ...(isSuperAdmin ? [["identitas", "🏛️ Identitas Lembaga"]] : []),
+    ...(isSuperAdmin ? [["jadwal", "🗓️ Susun Jadwal"], ["identitas", "🏛️ Identitas Lembaga"]] : []),
   ];
   return (
     <div style={{ padding: "16px", maxWidth: "1100px", margin: "0 auto" }}>
@@ -1790,6 +2252,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
       {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} />}
       {tab === "mapel" && <AdminMapel CL={CL} setCL={setCL} setGM={setGM} />}
       {tab === "guru" && <AdminPenugasan ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} CL={CL} setCL={setCL} />}
+      {tab === "jadwal" && isSuperAdmin && <AdminJadwal JADWAL={JADWAL} setJADWAL={setJADWAL} LEMBAGA={LEMBAGA} SEM={SEM} />}
       {tab === "identitas" && isSuperAdmin && <AdminLembaga LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} />}
     </div>
   );
@@ -2653,6 +3116,7 @@ export default function App() {
   const [allKep, setAllKep, allKepReady] = useRemoteState("allKep", {});
   const [SEM, setSEM, semReady] = useRemoteState("SEM", DEFAULT_SEM);
   const [LEMBAGA, setLEMBAGA, lembagaReady] = useRemoteState("LEMBAGA", DEFAULT_LEMBAGA);
+  const [JADWAL, setJADWAL, jadwalReady] = useRemoteState("JADWAL", DEFAULT_JADWAL);
   const [archives, setArchives, archivesReady] = useRemoteState("archives", {});
   const [viewingArchive, setViewingArchive] = useState(false);
 
@@ -2665,7 +3129,7 @@ export default function App() {
     }
   }, [accsReady]); // eslint-disable-line
 
-  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && archivesReady)) {
+  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady)) {
     return <LoadingScreen />;
   }
 
@@ -2682,7 +3146,7 @@ export default function App() {
             ) : (
               <>
                 {(user.role === "admin" || user.role === "superadmin") && (
-                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} isSuperAdmin={user.role === "superadmin"} />
+                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} isSuperAdmin={user.role === "superadmin"} />
                 )}
                 {user.role === "guru" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} />}
                 {user.role === "wk" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} />}
