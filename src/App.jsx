@@ -633,18 +633,11 @@ ${pages.join("\n")}
 // Shared table-HTML builder for both the Jadwal Putra and Jadwal Putri tables.
 // opts.useNames: print guru/mapel as their full name instead of kode (Jadwal Putri
 // doesn't get a legend to decode codes with, so it must be self-explanatory).
-// opts.piketColumn: when set (Jadwal Putri only), an extra "Guru Piket" column is
-// appended using the SAME hari/jam rows as the main table — attached directly to it
-// instead of a separate side table, so hari/jam aren't labeled a second time.
-// Putra keeps one column per kelas (guru code on its own line, mapel code below it —
-// still compact enough for a code-based cell). Putri (useNames) instead splits each
-// kelas into two real columns, Mapel then Guru, matching how the Excel export already
-// lays it out — full names don't fit stacked in one narrow column as readably as codes
-// do, and a real column keeps them aligned under their own header down the whole table.
-function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf, opts = {}) {
-  const { useNames = false, guruByKode = {}, mapelByKode = {}, piketColumn = null } = opts;
+// Jadwal Putra: guru code and mapel code side by side in their own columns per kelas
+// (horizontal, separate boxes) — codes are short enough that this stays compact.
+function jadwalTableHTMLPutra(kelasList, grid, conflicts, colorOf) {
   if (!kelasList || kelasList.length === 0) {
-    return `<p style="font-size:11px;color:#6b7280;font-style:italic">Belum ada kelas Putri di CL (tambahkan lewat tab Kelas).</p>`;
+    return `<p style="font-size:11px;color:#6b7280;font-style:italic">Belum ada kelas di JADWAL_KELAS.</p>`;
   }
   const groups = jadwalGroups(kelasList);
   const rows = JADWAL_HARI.map((hari) => JADWAL_JAM.map((jam, ji) => `
@@ -654,32 +647,64 @@ function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf, opts = {}) 
       <td class="c">${jam.waktu}</td>
       ${kelasList.map((k) => {
         const cell = grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
-        const conflict = conflicts[`${layer}|${hari}|${jam.kode}|${k.kode}`];
+        const conflict = conflicts[`putra|${hari}|${jam.kode}|${k.kode}`];
         const style = `background:${colorOf(cell.g)}${conflict ? ";outline:2px solid #dc2626;outline-offset:-2px" : ""}`;
         const title = conflict ? conflict.join(" | ").replace(/"/g, "'") : "";
-        if (useNames) {
-          // alias falls back to the full nama when the guru hasn't set one.
-          const gText = cell.g ? (guruByKode[cell.g]?.alias || guruByKode[cell.g]?.nama || cell.g) : "-";
-          const mText = cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "-";
-          return `<td class="c" style="${style}" title="${title}">${mText}${conflict ? " ⚠" : ""}</td><td class="c" style="${style}" title="${title}"><b>${gText}</b></td>`;
-        }
-        return `<td class="c" style="${style}" title="${title}"><b>${cell.g || "-"}</b>${cell.m ? "<br>" + cell.m : ""}${conflict ? " ⚠" : ""}</td>`;
+        return `<td class="c" style="${style}" title="${title}"><b>${cell.g || "-"}</b>${conflict ? " ⚠" : ""}</td><td class="c" style="${style}" title="${title}">${cell.m || "-"}</td>`;
       }).join("")}
-      ${piketColumn ? `<td class="c b">${piketColumn?.[hari]?.[jam.kode] || "-"}</td>` : ""}
     </tr>`).join("")).join("");
-  const headRows = useNames
-    ? [
-        `<tr><th rowspan="3">HARI</th><th rowspan="3">JAM KE</th><th rowspan="3">WAKTU</th>${groups.map((g) => `<th colspan="${g.count * 2}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}${piketColumn ? `<th rowspan="3">GURU PIKET</th>` : ""}</tr>`,
-        `<tr>${kelasList.map((k) => `<th colspan="2">${k.label}</th>`).join("")}</tr>`,
-        `<tr>${kelasList.map(() => `<th>Mapel</th><th>Guru</th>`).join("")}</tr>`,
-      ]
-    : [
-        `<tr><th rowspan="2">HARI</th><th rowspan="2">JAM KE</th><th rowspan="2">WAKTU</th>${groups.map((g) => `<th colspan="${g.count}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}${piketColumn ? `<th rowspan="2">GURU PIKET</th>` : ""}</tr>`,
-        `<tr>${kelasList.map((k) => `<th>${k.label}</th>`).join("")}</tr>`,
-      ];
   return `<table>
-    <thead>${headRows.join("")}</thead>
+    <thead>
+      <tr><th rowspan="3">HARI</th><th rowspan="3">JAM KE</th><th rowspan="3">WAKTU</th>${groups.map((g) => `<th colspan="${g.count * 2}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}</tr>
+      <tr>${kelasList.map((k) => `<th colspan="2">${k.label}</th>`).join("")}</tr>
+      <tr>${kelasList.map(() => `<th>Guru</th><th>Mapel</th>`).join("")}</tr>
+    </thead>
     <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// Jadwal Putri: one column per kelas, but mapel and guru occupy two separate stacked
+// rows (vertical, separate boxes) under the same Jam slot — mapel row on top, guru row
+// (using the alias if set) below it. Guru Piket still attaches as one more column,
+// spanning both rows of its Jam.
+function jadwalTableHTMLPutri(kelasList, grid, conflicts, colorOf, guruByKode, mapelByKode, piketColumn) {
+  if (!kelasList || kelasList.length === 0) {
+    return `<p style="font-size:11px;color:#6b7280;font-style:italic">Belum ada kelas Putri di CL (tambahkan lewat tab Kelas).</p>`;
+  }
+  const groups = jadwalGroups(kelasList);
+  const rowsHTML = [];
+  JADWAL_HARI.forEach((hari) => {
+    JADWAL_JAM.forEach((jam, ji) => {
+      const cellData = kelasList.map((k) => {
+        const cell = grid?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+        const conflict = conflicts[`putri|${hari}|${jam.kode}|${k.kode}`];
+        const gText = cell.g ? (guruByKode[cell.g]?.alias || guruByKode[cell.g]?.nama || cell.g) : "-";
+        const mText = cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "-";
+        const title = conflict ? conflict.join(" | ").replace(/"/g, "'") : "";
+        const style = `background:${colorOf(cell.g)}${conflict ? ";outline:2px solid #dc2626;outline-offset:-2px" : ""}`;
+        return { style, title, gText, mText, conflict };
+      });
+      const piketCell = piketColumn ? `<td class="c b" rowspan="2">${piketColumn?.[hari]?.[jam.kode] || "-"}</td>` : "";
+      rowsHTML.push(`<tr>
+        ${ji === 0 ? `<td rowspan="4" class="c b">${hari}</td>` : ""}
+        <td class="c" rowspan="2">${jam.kode}</td>
+        <td class="c" rowspan="2">${jam.waktu}</td>
+        <td class="c" style="background:#f3f4f6">Mapel</td>
+        ${cellData.map((c) => `<td class="c" style="${c.style}" title="${c.title}">${c.mText}${c.conflict ? " ⚠" : ""}</td>`).join("")}
+        ${piketCell}
+      </tr>`);
+      rowsHTML.push(`<tr>
+        <td class="c" style="background:#f3f4f6">Guru</td>
+        ${cellData.map((c) => `<td class="c" style="${c.style}" title="${c.title}"><b>${c.gText}</b></td>`).join("")}
+      </tr>`);
+    });
+  });
+  return `<table>
+    <thead>
+      <tr><th rowspan="2">HARI</th><th rowspan="2">JAM KE</th><th rowspan="2">WAKTU</th><th rowspan="2"></th>${groups.map((g) => `<th colspan="${g.count}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}${piketColumn ? `<th rowspan="2">GURU PIKET</th>` : ""}</tr>
+      <tr>${kelasList.map((k) => `<th>${k.label}</th>`).join("")}</tr>
+    </thead>
+    <tbody>${rowsHTML.join("")}</tbody>
   </table>`;
 }
 
@@ -734,7 +759,7 @@ th{background:#e5e7eb;text-align:center}
   ${conflictNote}
 
   <div class="sect">JADWAL PUTRA</div>
-  ${jadwalTableHTML("putra", JADWAL_KELAS, JADWAL.grid, conflicts, colorOf)}
+  ${jadwalTableHTMLPutra(JADWAL_KELAS, JADWAL.grid, conflicts, colorOf)}
   <div class="row">
     <table><thead><tr><th colspan="2">KODE GURU</th></tr></thead><tbody>${guruRows}</tbody></table>
     <table><thead><tr><th colspan="2">KODE MAPEL</th></tr></thead><tbody>${mapelRows}</tbody></table>
@@ -742,7 +767,7 @@ th{background:#e5e7eb;text-align:center}
   </div>
 
   <div class="sect">JADWAL PUTRI</div>
-  ${jadwalTableHTML("putri", putriKelas, JADWAL.gridPutri, conflicts, colorOf, { useNames: true, guruByKode, mapelByKode, piketColumn: JADWAL.piketPutri })}
+  ${jadwalTableHTMLPutri(putriKelas, JADWAL.gridPutri, conflicts, colorOf, guruByKode, mapelByKode, JADWAL.piketPutri)}
 </div>
 ${autoprint ? `<script>window.onload=()=>{window.print()}<\/script>` : ""}
 </body></html>`;
@@ -821,47 +846,50 @@ function buildJadwalExcel(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, 
     XLSX.utils.book_append_sheet(wb, ws, "Jadwal Putra");
   }
 
-  // ── Jadwal Putri: full names (no legend needed), Guru Piket attached as one more
-  // column using the same hari/jam rows, mirroring the print layout ──
+  // ── Jadwal Putri: one column per kelas, Mapel and Guru as two stacked rows per Jam
+  // (vertical, separate cells) instead of side-by-side columns — mirrors the print
+  // layout. Guru Piket attaches as one more column, spanning both rows of its Jam.
   {
     if (putriKelas.length === 0) {
       const ws = XLSX.utils.aoa_to_sheet([["Belum ada kelas Putri di CL (tambahkan lewat tab Kelas)."]]);
       XLSX.utils.book_append_sheet(wb, ws, "Jadwal Putri");
     } else {
-      const NC = 3 + putriKelas.length * 2 + 1;
-      const header1 = ["HARI", "JAM KE", "WAKTU"];
-      putriKelas.forEach((k) => header1.push(k.label, ""));
-      header1.push("GURU PIKET");
-      const header2 = ["", "", ""];
-      putriKelas.forEach(() => header2.push("Mapel", "Guru"));
-      header2.push("");
+      const NC = 4 + putriKelas.length + 1; // hari, jam ke, waktu, label col + kelas cols + piket
+      const header = ["HARI", "JAM KE", "WAKTU", "", ...putriKelas.map((k) => k.label), "GURU PIKET"];
       const dataRows = [];
-      JADWAL_HARI.forEach((hari) => JADWAL_JAM.forEach((jam, ji) => {
-        const row = [ji === 0 ? hari : "", jam.kode, jam.waktu];
-        putriKelas.forEach((k) => {
-          const cell = JADWAL.gridPutri?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
-          const gText = cell.g ? (guruByKode[cell.g]?.alias || guruByKode[cell.g]?.nama || cell.g) : "";
-          const mText = cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "";
-          row.push(mText, gText);
+      JADWAL_HARI.forEach((hari) => {
+        JADWAL_JAM.forEach((jam, ji) => {
+          const mapelRow = [ji === 0 ? hari : "", jam.kode, jam.waktu, "Mapel"];
+          const guruRow = ["", "", "", "Guru"];
+          putriKelas.forEach((k) => {
+            const cell = JADWAL.gridPutri?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
+            mapelRow.push(cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "");
+            guruRow.push(cell.g ? (guruByKode[cell.g]?.alias || guruByKode[cell.g]?.nama || cell.g) : "");
+          });
+          mapelRow.push(JADWAL.piketPutri?.[hari]?.[jam.kode] || "");
+          guruRow.push("");
+          dataRows.push(mapelRow, guruRow);
         });
-        row.push(JADWAL.piketPutri?.[hari]?.[jam.kode] || "");
-        dataRows.push(row);
-      }));
-      const aoa = [...titleRows(NC), header1, header2, ...dataRows];
+      });
+      const aoa = [...titleRows(NC), header, ...dataRows];
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws["!cols"] = [{ wch: 8 }, { wch: 6 }, { wch: 13 }, ...putriKelas.flatMap(() => [{ wch: 22 }, { wch: 16 }]), { wch: 16 }];
+      ws["!cols"] = [{ wch: 8 }, { wch: 6 }, { wch: 13 }, { wch: 7 }, ...putriKelas.map(() => ({ wch: 20 })), { wch: 16 }];
       const merges = [
         { s: { r: 0, c: 0 }, e: { r: 0, c: NC - 1 } },
         { s: { r: 1, c: 0 }, e: { r: 1, c: NC - 1 } },
         { s: { r: 2, c: 0 }, e: { r: 2, c: NC - 1 } },
-        { s: { r: 4, c: 0 }, e: { r: 5, c: 0 } },
-        { s: { r: 4, c: 1 }, e: { r: 5, c: 1 } },
-        { s: { r: 4, c: 2 }, e: { r: 5, c: 2 } },
-        { s: { r: 4, c: NC - 1 }, e: { r: 5, c: NC - 1 } },
       ];
-      putriKelas.forEach((k, i) => { const col = 3 + i * 2; merges.push({ s: { r: 4, c: col }, e: { r: 4, c: col + 1 } }); });
-      let r = 6;
-      JADWAL_HARI.forEach(() => { merges.push({ s: { r, c: 0 }, e: { r: r + 1, c: 0 } }); r += 2; });
+      let r = 5; // titleRows(4 rows) + header(1 row) = data starts at row index 5
+      JADWAL_HARI.forEach(() => {
+        merges.push({ s: { r, c: 0 }, e: { r: r + 3, c: 0 } }); // hari spans both Jam I & II (4 rows)
+        for (let jo = 0; jo < 2; jo++) {
+          const rr = r + jo * 2;
+          merges.push({ s: { r: rr, c: 1 }, e: { r: rr + 1, c: 1 } });
+          merges.push({ s: { r: rr, c: 2 }, e: { r: rr + 1, c: 2 } });
+          merges.push({ s: { r: rr, c: NC - 1 }, e: { r: rr + 1, c: NC - 1 } });
+        }
+        r += 4;
+      });
       ws["!merges"] = merges;
       XLSX.utils.book_append_sheet(wb, ws, "Jadwal Putri");
     }
