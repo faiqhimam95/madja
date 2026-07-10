@@ -653,9 +653,11 @@ function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf, opts = {}) 
         const style = `background:${colorOf(cell.g)}${conflict ? ";outline:2px solid #dc2626;outline-offset:-2px" : ""}`;
         const title = conflict ? conflict.join(" | ").replace(/"/g, "'") : "";
         if (useNames) {
-          const gText = cell.g ? (guruByKode[cell.g]?.nama || cell.g) : "-";
+          // Mapel on top, guru's short "panggilan" (alias) below it — the alias falls
+          // back to the full nama when the guru hasn't set one.
+          const gText = cell.g ? (guruByKode[cell.g]?.alias || guruByKode[cell.g]?.nama || cell.g) : "-";
           const mText = cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "";
-          return `<td class="c" style="${style}" title="${title}"><div style="font-size:8px;line-height:1.15"><b>${gText}</b>${mText ? "<br>" + mText : ""}${conflict ? " ⚠" : ""}</div></td>`;
+          return `<td class="c" style="${style}" title="${title}"><div style="font-size:8px;line-height:1.15">${mText ? mText + "<br>" : ""}<b>${gText}</b>${conflict ? " ⚠" : ""}</div></td>`;
         }
         return `<td class="c" style="${style}" title="${title}"><b>${cell.g || "-"}</b>${cell.m ? " " + cell.m : ""}${conflict ? " ⚠" : ""}</td>`;
       }).join("")}
@@ -820,14 +822,16 @@ function buildJadwalExcel(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, 
       putriKelas.forEach((k) => header1.push(k.label, ""));
       header1.push("GURU PIKET");
       const header2 = ["", "", ""];
-      putriKelas.forEach(() => header2.push("Guru", "Mapel"));
+      putriKelas.forEach(() => header2.push("Mapel", "Guru"));
       header2.push("");
       const dataRows = [];
       JADWAL_HARI.forEach((hari) => JADWAL_JAM.forEach((jam, ji) => {
         const row = [ji === 0 ? hari : "", jam.kode, jam.waktu];
         putriKelas.forEach((k) => {
           const cell = JADWAL.gridPutri?.[hari]?.[jam.kode]?.[k.kode] || { g: "", m: "" };
-          row.push(cell.g ? (guruByKode[cell.g]?.nama || cell.g) : "", cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "");
+          const gText = cell.g ? (guruByKode[cell.g]?.alias || guruByKode[cell.g]?.nama || cell.g) : "";
+          const mText = cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "";
+          row.push(mText, gText);
         });
         row.push(JADWAL.piketPutri?.[hari]?.[jam.kode] || "");
         dataRows.push(row);
@@ -2397,6 +2401,11 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   const updateGuruNama = (i, val) => {
     setJADWAL((p) => ({ ...p, guru: p.guru.map((g, idx) => (idx === i ? { ...g, nama: val } : g)) }));
   };
+  // Short call-name shown instead of the full nama in Jadwal Putri (which prints names,
+  // not codes, so a long formal name doesn't fit as well as it does behind a legend).
+  const updateGuruAlias = (kode, val) => {
+    setJADWAL((p) => ({ ...p, guru: p.guru.map((g) => (g.kode === kode ? { ...g, alias: val } : g)) }));
+  };
   const updateGuruKode = (i, val) => {
     const kode = val.trim().toUpperCase();
     const old = JADWAL.guru[i];
@@ -2474,8 +2483,11 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
     const ket = JADWAL.ketentuan?.[kode];
     const kelasN = ket?.kelasBoleh?.length || 0;
     const tidakN = ket?.tidakBisa ? Object.values(ket.tidakBisa).reduce((s, o) => s + Object.keys(o).length, 0) : 0;
-    if (kelasN === 0 && tidakN === 0) return "Semua kelas · semua jam bisa";
-    return `${kelasN > 0 ? `${kelasN} kelas dipilih` : "Semua kelas"} · ${tidakN > 0 ? `${tidakN} slot tidak bisa` : "semua jam bisa"}`;
+    const base = kelasN === 0 && tidakN === 0
+      ? "Semua kelas · semua jam bisa"
+      : `${kelasN > 0 ? `${kelasN} kelas dipilih` : "Semua kelas"} · ${tidakN > 0 ? `${tidakN} slot tidak bisa` : "semua jam bisa"}`;
+    const alias = JADWAL.guru.find((g) => g.kode === kode)?.alias;
+    return alias ? `${base} · Panggilan: "${alias}"` : base;
   };
 
   const addMapel = () => {
@@ -2837,6 +2849,10 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                     {expandedGuru.has(g.kode) && (
                       <tr>
                         <td colSpan={4} style={{ padding: "12px 16px", background: "#fafafa" }}>
+                          <div style={{ marginBottom: "14px" }}>
+                            <label style={labelA}>Nama Panggilan (dipakai di Jadwal Putri, kosongkan untuk pakai nama lengkap)</label>
+                            <input type="text" value={g.alias || ""} onChange={(e) => updateGuruAlias(g.kode, e.target.value)} placeholder={g.nama} style={{ ...inputA, maxWidth: "320px" }} />
+                          </div>
                           <div style={{ marginBottom: "12px" }}>
                             <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Kelas & mata pelajaran yang diampu (kosongkan kelas = boleh mengajar di semua kelas; kosongkan mapel = boleh mapel apa saja di kelas itu). Ini juga dipakai untuk mengisi otomatis kolom mapel di tab "Jadwal" begitu guru ini dipilih di suatu sel.</div>
                             <div style={{ fontSize: "10px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", marginBottom: "4px" }}>Jadwal Putra</div>
