@@ -284,17 +284,64 @@ function jadwalRenameMapelInKetentuan(ketentuan, oldKode, newKode) {
   });
   return next;
 }
+// WS I PI / WS II PI in Jadwal Putra are the same real classes as whichever Jadwal Putri
+// kelas is literally named "WS I Pi" / "WS II Pi" (matched by normalized label, not a
+// hardcoded CL kode, since that's admin-editable) — not two different classes that
+// happen to share a name. Matched dynamically here so both computeJadwalConflicts
+// (dedupe the "same guru, same real class" case) and AdminJadwal's mirrored writes
+// use one consistent source of truth.
+const jadwalNormLabel = (s) => (s || "").toLowerCase().replace(/\s+/g, "");
+function computeWustoPiMirror(putriKelas) {
+  const putraToPutri = {};
+  const putriToPutra = {};
+  ["wsipi", "wsiipi"].forEach((putraKode) => {
+    const putraLabel = JADWAL_KELAS.find((k) => k.kode === putraKode)?.label;
+    const match = (putriKelas || []).find((k) => jadwalNormLabel(k.label) === jadwalNormLabel(putraLabel));
+    if (match) { putraToPutri[putraKode] = match.kode; putriToPutra[match.kode] = putraKode; }
+  });
+  return { putraToPutri, putriToPutra };
+}
+// One-time, additive-only reconciliation: if a Wustho Pi mirror pair has data on the
+// Putra side but the Putri side is still blank, copy it across so the two tables agree
+// from the start. Never overwrites existing Putri data or touches the Putra side.
+function reconcileWustoPi(grid, gridPutri, mirror) {
+  let changed = false;
+  const next = { ...(gridPutri || {}) };
+  Object.entries(mirror.putraToPutri).forEach(([putraKode, putriKode]) => {
+    JADWAL_HARI.forEach((hari) => {
+      JADWAL_JAM.forEach((jam) => {
+        const putraCell = grid?.[hari]?.[jam.kode]?.[putraKode];
+        const putriCell = gridPutri?.[hari]?.[jam.kode]?.[putriKode];
+        const putriEmpty = !putriCell || (!putriCell.g && !putriCell.m);
+        if (putraCell && (putraCell.g || putraCell.m) && putriEmpty) {
+          changed = true;
+          next[hari] = { ...(next[hari] || {}) };
+          next[hari][jam.kode] = { ...(next[hari][jam.kode] || {}), [putriKode]: { ...putraCell } };
+        }
+      });
+    });
+  });
+  return changed ? next : gridPutri;
+}
+
 // Flags two kinds of scheduling clashes across every hari/jam/kelas cell, in BOTH the
 // Jadwal Putra table (JADWAL_KELAS/JADWAL.grid) and the Jadwal Putri table (putriKelas/
 // JADWAL.gridPutri) together — the same guru double-booked across the two tables is
 // just as much a clash as one within a single table: the same guru assigned to >1 kelas
 // in the same period, or assigned somewhere their "Ketentuan Guru" settings disallow.
+// mirror (from computeWustoPiMirror) treats WS I/II PI-Pi pairs as ONE real class, so a
+// guru correctly appearing in both mirrored cells isn't flagged as double-booked.
 // Returns { "layer|hari|jamKode|kelasKode": [reason, ...] } for cells with a conflict.
-function computeJadwalConflicts(JADWAL, putriKelas = []) {
+function computeJadwalConflicts(JADWAL, putriKelas = [], mirror = { putraToPutri: {}, putriToPutra: {} }) {
   const conflicts = {};
   const flag = (layer, hari, jamKode, kelasKode, reason) => {
     const key = `${layer}|${hari}|${jamKode}|${kelasKode}`;
     (conflicts[key] = conflicts[key] || []).push(reason);
+  };
+  const canonicalOf = (layer, kelasKode) => {
+    if (layer === "putra" && mirror.putraToPutri[kelasKode]) return `shared:${kelasKode}`;
+    if (layer === "putri" && mirror.putriToPutra[kelasKode]) return `shared:${mirror.putriToPutra[kelasKode]}`;
+    return `${layer}:${kelasKode}`;
   };
   const layers = [
     { layer: "putra", kelasList: JADWAL_KELAS, grid: JADWAL.grid },
@@ -308,7 +355,10 @@ function computeJadwalConflicts(JADWAL, putriKelas = []) {
           const cell = grid?.[hari]?.[jam.kode]?.[k.kode];
           const g = cell?.g;
           if (!g) return;
-          (byGuru[g] = byGuru[g] || []).push({ layer, kode: k.kode, label: k.label });
+          const canon = canonicalOf(layer, k.kode);
+          byGuru[g] = byGuru[g] || new Map();
+          if (!byGuru[g].has(canon)) byGuru[g].set(canon, []);
+          byGuru[g].get(canon).push({ layer, kode: k.kode, label: k.label });
           const ket = JADWAL.ketentuan?.[g];
           if (ket?.tidakBisa?.[hari]?.[jam.kode]) {
             flag(layer, hari, jam.kode, k.kode, `${g} menandai tidak bisa mengajar ${hari} Jam ${jam.kode}`);
@@ -318,10 +368,11 @@ function computeJadwalConflicts(JADWAL, putriKelas = []) {
           }
         });
       });
-      Object.entries(byGuru).forEach(([g, entries]) => {
-        if (entries.length > 1) {
-          const labels = entries.map((e) => e.label).join(", ");
-          entries.forEach((e) => flag(e.layer, hari, jam.kode, e.kode, `${g} bentrok: mengajar ${entries.length} kelas sekaligus (${labels})`));
+      Object.entries(byGuru).forEach(([g, canonMap]) => {
+        if (canonMap.size > 1) {
+          const entries = [...canonMap.values()].flat();
+          const labels = [...canonMap.values()].map((arr) => arr[0].label).join(", ");
+          entries.forEach((e) => flag(e.layer, hari, jam.kode, e.kode, `${g} bentrok: mengajar ${canonMap.size} kelas sekaligus (${labels})`));
         }
       });
     });
@@ -631,7 +682,7 @@ function jadwalPiketTableHTML(piketData) {
 function buildJadwalHTML(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, putriKelas = [], autoprint = true) {
   const semTipeLabel = SEM?.tipe === "ganjil" ? "Ganjil" : "Genap";
   const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
-  const conflicts = computeJadwalConflicts(JADWAL, putriKelas);
+  const conflicts = computeJadwalConflicts(JADWAL, putriKelas, computeWustoPiMirror(putriKelas));
   const guruByKode = Object.fromEntries(JADWAL.guru.map((g) => [g.kode, g]));
   const mapelByKode = Object.fromEntries(JADWAL.mapel.map((m) => [m.kode, m]));
 
@@ -2262,12 +2313,25 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   const [newMapelNama, setNewMapelNama] = useState("");
   const [expandedGuru, setExpandedGuru] = useState(() => new Set());
 
+  // Jadwal Putri's columns mirror the Dashboard's "Rekap Per Kelas" Putri grouping —
+  // any CL kelas not in the default KELAS_ORDER (e.g. aw1c, ws1pi, ...).
+  const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}), [CL]);
+  // WS I PI / WS II PI (Putra) and whichever Putri kelas is literally named "WS I Pi" /
+  // "WS II Pi" are the same real classes, not two — see computeWustoPiMirror.
+  const wustoPiMirror = useMemo(() => computeWustoPiMirror(putriKelas), [putriKelas]);
+
   // Actually filling in the grid (Jadwal Putra/Putri cells + Guru Piket) is buffered
   // locally instead of writing straight to the synced JADWAL on every click — that's
   // what makes Undo/Redo/Simpan meaningful. Master data (guru, mapel, ketentuan) stays
   // auto-saved as before, edited from their own tabs. Mirrors AdminLembaga's local
   // form + explicit "Simpan" pattern, just applied to the schedule grid instead.
-  const [draftGrid, setDraftGrid] = useState(() => ({ grid: JADWAL.grid, gridPutri: JADWAL.gridPutri, piketPutra: JADWAL.piketPutra, piketPutri: JADWAL.piketPutri }));
+  // The Wustho Pi mirror pair is reconciled once here too: if Jadwal Putra already had
+  // data (e.g. from the original seed) and the mirrored Jadwal Putri cell is still
+  // blank, the Putri side is backfilled so the two tables agree from the start.
+  const [draftGrid, setDraftGrid] = useState(() => {
+    const mirror = computeWustoPiMirror(jadwalPutriKelas(CL || {}));
+    return { grid: JADWAL.grid, gridPutri: reconcileWustoPi(JADWAL.grid, JADWAL.gridPutri, mirror), piketPutra: JADWAL.piketPutra, piketPutri: JADWAL.piketPutri };
+  });
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [dirty, setDirty] = useState(false);
@@ -2284,15 +2348,11 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
     [ACCS, GM]
   );
 
-  // Jadwal Putri's columns mirror the Dashboard's "Rekap Per Kelas" Putri grouping —
-  // any CL kelas not in the default KELAS_ORDER (e.g. aw1c, ws1pi, ...).
-  const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}), [CL]);
-
   // Everything downstream (conflict detection, preview, print, Excel) reads this
   // merged view so it always reflects the current on-screen draft, saved or not.
   const liveJADWAL = { ...JADWAL, ...draftGrid };
 
-  const conflicts = useMemo(() => computeJadwalConflicts(liveJADWAL, putriKelas), [liveJADWAL, putriKelas]);
+  const conflicts = useMemo(() => computeJadwalConflicts(liveJADWAL, putriKelas, wustoPiMirror), [liveJADWAL, putriKelas, wustoPiMirror]);
   const conflictCount = Object.keys(conflicts).length;
 
   const pushHistory = () => { setUndoStack((s) => [...s.slice(-49), draftGrid]); setRedoStack([]); };
@@ -2457,31 +2517,43 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   };
 
   const kelasLabelOf = (kelasKode) => JADWAL_KELAS.find((k) => k.kode === kelasKode)?.label || putriKelas.find((k) => k.kode === kelasKode)?.label || kelasKode;
-  const setCell = (hari, jamKode, kelasKode, field, val) => {
-    const oldCell = draftGrid.grid?.[hari]?.[jamKode]?.[kelasKode] || { g: "", m: "" };
-    const grid = { ...draftGrid.grid };
-    const hariObj = { ...(grid[hari] || {}) };
+  const withCell = (grid, hari, jamKode, kelasKode, newCell) => {
+    const g = { ...grid };
+    const hariObj = { ...(g[hari] || {}) };
     const jamObj = { ...(hariObj[jamKode] || {}) };
-    jamObj[kelasKode] = { ...oldCell, [field]: val };
+    jamObj[kelasKode] = newCell;
     hariObj[jamKode] = jamObj;
-    grid[hari] = hariObj;
-    pushHistory();
-    setDraftGrid((d) => ({ ...d, grid }));
-    setDirty(true);
-    logChange(`Jadwal Putra · ${kelasLabelOf(kelasKode)} · ${hari} Jam ${jamKode}: ${field === "g" ? "Guru" : "Mapel"} "${oldCell[field] || "-"}" → "${val || "-"}"`);
+    g[hari] = hariObj;
+    return g;
   };
-  const setCellPutri = (hari, jamKode, kelasKode, field, val) => {
-    const oldCell = draftGrid.gridPutri?.[hari]?.[jamKode]?.[kelasKode] || { g: "", m: "" };
-    const gridPutri = { ...draftGrid.gridPutri };
-    const hariObj = { ...(gridPutri[hari] || {}) };
-    const jamObj = { ...(hariObj[jamKode] || {}) };
-    jamObj[kelasKode] = { ...oldCell, [field]: val };
-    hariObj[jamKode] = jamObj;
-    gridPutri[hari] = hariObj;
+  // fields is an object like { g: "A" } or { g: "A", m: "1" } — applied atomically in a
+  // single state update. This must NOT be split into two separate setCell calls (e.g.
+  // one for guru then one for auto-filled mapel): each call reads draftGrid fresh from
+  // the render closure, so a second call in the same event handler would silently
+  // overwrite the first (that was the "changing guru sometimes doesn't stick" bug).
+  const setCell = (hari, jamKode, kelasKode, fields) => {
+    const oldCell = draftGrid.grid?.[hari]?.[jamKode]?.[kelasKode] || { g: "", m: "" };
+    const newCell = { ...oldCell, ...fields };
+    const grid = withCell(draftGrid.grid, hari, jamKode, kelasKode, newCell);
+    const mirrorKode = wustoPiMirror.putraToPutri[kelasKode];
+    const gridPutri = mirrorKode ? withCell(draftGrid.gridPutri, hari, jamKode, mirrorKode, newCell) : draftGrid.gridPutri;
     pushHistory();
-    setDraftGrid((d) => ({ ...d, gridPutri }));
+    setDraftGrid((d) => ({ ...d, grid, gridPutri }));
     setDirty(true);
-    logChange(`Jadwal Putri · ${kelasLabelOf(kelasKode)} · ${hari} Jam ${jamKode}: ${field === "g" ? "Guru" : "Mapel"} "${oldCell[field] || "-"}" → "${val || "-"}"`);
+    const parts = Object.keys(fields).map((f) => `${f === "g" ? "Guru" : "Mapel"} "${oldCell[f] || "-"}" → "${fields[f] || "-"}"`).join(", ");
+    logChange(`Jadwal Putra · ${kelasLabelOf(kelasKode)} · ${hari} Jam ${jamKode}: ${parts}${mirrorKode ? " (ikut disamakan di Jadwal Putri)" : ""}`);
+  };
+  const setCellPutri = (hari, jamKode, kelasKode, fields) => {
+    const oldCell = draftGrid.gridPutri?.[hari]?.[jamKode]?.[kelasKode] || { g: "", m: "" };
+    const newCell = { ...oldCell, ...fields };
+    const gridPutri = withCell(draftGrid.gridPutri, hari, jamKode, kelasKode, newCell);
+    const mirrorKode = wustoPiMirror.putriToPutra[kelasKode];
+    const grid = mirrorKode ? withCell(draftGrid.grid, hari, jamKode, mirrorKode, newCell) : draftGrid.grid;
+    pushHistory();
+    setDraftGrid((d) => ({ ...d, grid, gridPutri }));
+    setDirty(true);
+    const parts = Object.keys(fields).map((f) => `${f === "g" ? "Guru" : "Mapel"} "${oldCell[f] || "-"}" → "${fields[f] || "-"}"`).join(", ");
+    logChange(`Jadwal Putri · ${kelasLabelOf(kelasKode)} · ${hari} Jam ${jamKode}: ${parts}${mirrorKode ? " (ikut disamakan di Jadwal Putra)" : ""}`);
   };
   const setPiket = (which, hari, jamKode, val) => {
     const key = which === "putra" ? "piketPutra" : "piketPutri";
@@ -2583,14 +2655,15 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                           <div style={{ display: "flex", gap: "2px", justifyContent: "center", alignItems: "center" }}>
                             <select value={cell.g} onChange={(e) => {
                               const newG = e.target.value;
-                              setCell(hari, jam.kode, k.kode, "g", newG);
                               const allowed = JADWAL.ketentuan?.[newG]?.mapelPerKelas?.[k.kode];
-                              if (allowed && allowed.length === 1) setCell(hari, jam.kode, k.kode, "m", allowed[0]);
+                              const fields = { g: newG };
+                              if (allowed && allowed.length === 1) fields.m = allowed[0];
+                              setCell(hari, jam.kode, k.kode, fields);
                             }} style={cellSelect} title="Kode guru">
                               <option value="">-</option>
                               {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode} — {g.nama}</option>)}
                             </select>
-                            <select value={cell.m} onChange={(e) => setCell(hari, jam.kode, k.kode, "m", e.target.value)} style={cellSelect} title="Kode mapel">
+                            <select value={cell.m} onChange={(e) => setCell(hari, jam.kode, k.kode, { m: e.target.value })} style={cellSelect} title="Kode mapel">
                               <option value="">-</option>
                               {mapelOptionsFor(cell.g, k.kode).map((m) => <option key={m.kode} value={m.kode}>{m.kode} — {m.nama}</option>)}
                             </select>
@@ -2607,7 +2680,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
           <PiketEditor title="🎫 Guru Piket — Putra" piket={draftGrid.piketPutra} onChange={(h, j, v) => setPiket("putra", h, j, v)} />
 
           <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#111827", margin: "28px 0 4px" }}>Jadwal Putri</h3>
-          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0 }}>Kelas di sini mengikuti kelas Putri yang terdaftar di Dashboard → Rekap Per Kelas (kelas di luar kelompok default). Wustho Putri (WS I PI / WS II PI) tetap ada di tabel Jadwal Putra di atas. Guru Piket Putri menempel langsung sebagai kolom terakhir, mengikuti hari & jam jadwal ini.</p>
+          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0 }}>Kelas di sini mengikuti kelas Putri yang terdaftar di Dashboard → Rekap Per Kelas (kelas di luar kelompok default). Wustho Putri (WS I PI / WS II PI) tetap ada di tabel Jadwal Putra di atas — keduanya kelas yang sama, jadi mengisi salah satu otomatis mengisi yang lain juga. Guru Piket Putri menempel langsung sebagai kolom terakhir, mengikuti hari & jam jadwal ini.</p>
           {putriKelas.length === 0 ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
               Belum ada kelas Putri. Tambahkan kelas baru (kode di luar aw1a/aw1b/aw2a/aw2b/aw3a/ws1/ws2) lewat tab "🏫 Kelas" — otomatis akan muncul di sini dan di Rekap Per Kelas.
@@ -2641,14 +2714,15 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                             <div style={{ display: "flex", gap: "2px", justifyContent: "center", alignItems: "center" }}>
                               <select value={cell.g} onChange={(e) => {
                                 const newG = e.target.value;
-                                setCellPutri(hari, jam.kode, k.kode, "g", newG);
                                 const allowed = JADWAL.ketentuan?.[newG]?.mapelPerKelas?.[k.kode];
-                                if (allowed && allowed.length === 1) setCellPutri(hari, jam.kode, k.kode, "m", allowed[0]);
+                                const fields = { g: newG };
+                                if (allowed && allowed.length === 1) fields.m = allowed[0];
+                                setCellPutri(hari, jam.kode, k.kode, fields);
                               }} style={cellSelect} title="Kode guru">
                                 <option value="">-</option>
                                 {JADWAL.guru.map((g) => <option key={g.kode} value={g.kode}>{g.kode} — {g.nama}</option>)}
                               </select>
-                              <select value={cell.m} onChange={(e) => setCellPutri(hari, jam.kode, k.kode, "m", e.target.value)} style={cellSelect} title="Kode mapel">
+                              <select value={cell.m} onChange={(e) => setCellPutri(hari, jam.kode, k.kode, { m: e.target.value })} style={cellSelect} title="Kode mapel">
                                 <option value="">-</option>
                                 {mapelOptionsFor(cell.g, k.kode).map((m) => <option key={m.kode} value={m.kode}>{m.kode} — {m.nama}</option>)}
                               </select>
