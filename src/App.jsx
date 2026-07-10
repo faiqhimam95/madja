@@ -636,6 +636,11 @@ ${pages.join("\n")}
 // opts.piketColumn: when set (Jadwal Putri only), an extra "Guru Piket" column is
 // appended using the SAME hari/jam rows as the main table — attached directly to it
 // instead of a separate side table, so hari/jam aren't labeled a second time.
+// Putra keeps one column per kelas (guru code on its own line, mapel code below it —
+// still compact enough for a code-based cell). Putri (useNames) instead splits each
+// kelas into two real columns, Mapel then Guru, matching how the Excel export already
+// lays it out — full names don't fit stacked in one narrow column as readably as codes
+// do, and a real column keeps them aligned under their own header down the whole table.
 function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf, opts = {}) {
   const { useNames = false, guruByKode = {}, mapelByKode = {}, piketColumn = null } = opts;
   if (!kelasList || kelasList.length === 0) {
@@ -653,21 +658,27 @@ function jadwalTableHTML(layer, kelasList, grid, conflicts, colorOf, opts = {}) 
         const style = `background:${colorOf(cell.g)}${conflict ? ";outline:2px solid #dc2626;outline-offset:-2px" : ""}`;
         const title = conflict ? conflict.join(" | ").replace(/"/g, "'") : "";
         if (useNames) {
-          // Mapel on top, guru's short "panggilan" (alias) below it — the alias falls
-          // back to the full nama when the guru hasn't set one.
+          // alias falls back to the full nama when the guru hasn't set one.
           const gText = cell.g ? (guruByKode[cell.g]?.alias || guruByKode[cell.g]?.nama || cell.g) : "-";
-          const mText = cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "";
-          return `<td class="c" style="${style}" title="${title}"><div style="font-size:8px;line-height:1.15">${mText ? mText + "<br>" : ""}<b>${gText}</b>${conflict ? " ⚠" : ""}</div></td>`;
+          const mText = cell.m ? (mapelByKode[cell.m]?.nama || cell.m) : "-";
+          return `<td class="c" style="${style}" title="${title}">${mText}${conflict ? " ⚠" : ""}</td><td class="c" style="${style}" title="${title}"><b>${gText}</b></td>`;
         }
-        return `<td class="c" style="${style}" title="${title}"><b>${cell.g || "-"}</b>${cell.m ? " " + cell.m : ""}${conflict ? " ⚠" : ""}</td>`;
+        return `<td class="c" style="${style}" title="${title}"><b>${cell.g || "-"}</b>${cell.m ? "<br>" + cell.m : ""}${conflict ? " ⚠" : ""}</td>`;
       }).join("")}
       ${piketColumn ? `<td class="c b">${piketColumn?.[hari]?.[jam.kode] || "-"}</td>` : ""}
     </tr>`).join("")).join("");
+  const headRows = useNames
+    ? [
+        `<tr><th rowspan="3">HARI</th><th rowspan="3">JAM KE</th><th rowspan="3">WAKTU</th>${groups.map((g) => `<th colspan="${g.count * 2}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}${piketColumn ? `<th rowspan="3">GURU PIKET</th>` : ""}</tr>`,
+        `<tr>${kelasList.map((k) => `<th colspan="2">${k.label}</th>`).join("")}</tr>`,
+        `<tr>${kelasList.map(() => `<th>Mapel</th><th>Guru</th>`).join("")}</tr>`,
+      ]
+    : [
+        `<tr><th rowspan="2">HARI</th><th rowspan="2">JAM KE</th><th rowspan="2">WAKTU</th>${groups.map((g) => `<th colspan="${g.count}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}${piketColumn ? `<th rowspan="2">GURU PIKET</th>` : ""}</tr>`,
+        `<tr>${kelasList.map((k) => `<th>${k.label}</th>`).join("")}</tr>`,
+      ];
   return `<table>
-    <thead>
-      <tr><th rowspan="2">HARI</th><th rowspan="2">JAM KE</th><th rowspan="2">WAKTU</th>${groups.map((g) => `<th colspan="${g.count}">KELAS ${g.grup.toUpperCase()}</th>`).join("")}${piketColumn ? `<th rowspan="2">GURU PIKET</th>` : ""}</tr>
-      <tr>${kelasList.map((k) => `<th>${k.label}</th>`).join("")}</tr>
-    </thead>
+    <thead>${headRows.join("")}</thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
