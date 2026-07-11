@@ -1017,7 +1017,6 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA }) {
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [err, setErr] = useState("");
-  const [chooseFor, setChooseFor] = useState(null); // matched account, awaiting wali/guru choice
   const [chooseKelas, setChooseKelas] = useState(null); // account awaiting kelas pick (multi-kelas wali)
 
   const finalizeLogin = (a, role, pickedKelas) => {
@@ -1033,23 +1032,23 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA }) {
 
   const goWali = (a) => {
     const list = kelasList(a);
-    if (list.length > 1) { setChooseFor(null); setChooseKelas(a); }
+    if (list.length > 1) { setChooseKelas(a); }
     else { finalizeLogin(a, "wk", list[0]); }
   };
 
+  // Accounts that are both Wali Kelas and Guru Mapel no longer get an extra "masuk
+  // sebagai" choice at login — they land as Wali Kelas by default and switch to Guru
+  // Mapel anytime afterward via the existing "🔀 Beralih" control in the Header.
   const login = () => {
     const a = ACCS.find((x) => x.u === u && x.p === p);
     if (!a) { setErr("Username atau password salah"); return; }
     setErr("");
     if (a.role === "admin" || a.role === "superadmin") { finalizeLogin(a, a.role); return; }
-    const wali = isWaliAcc(a);
-    const guru = isGuruAcc(a, GM);
-    if (wali && guru) { setChooseFor(a); return; }
-    if (wali) { goWali(a); return; }
-    if (guru) { finalizeLogin(a, "guru"); return; }
+    if (isWaliAcc(a)) { goWali(a); return; }
+    if (isGuruAcc(a, GM)) { finalizeLogin(a, "guru"); return; }
     setErr("Akun ini belum memiliki penugasan (wali kelas atau mata pelajaran). Hubungi admin.");
   };
-  const fill = (a) => { setU(a.u); setP(a.p); setChooseFor(null); setChooseKelas(null); };
+  const fill = (a) => { setU(a.u); setP(a.p); setChooseKelas(null); };
 
   const wkA = ACCS.filter((a) => a.role !== "admin" && isWaliAcc(a));
   const guA = ACCS.filter((a) => a.role !== "admin" && isGuruAcc(a, GM));
@@ -1075,21 +1074,6 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA }) {
               </GreenBtn>
             ))}
             <button onClick={() => setChooseKelas(null)} style={{ width: "100%", marginTop: "2px", padding: "8px", background: "transparent", color: "#6b7280", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>
-              ← Kembali
-            </button>
-          </div>
-        ) : chooseFor ? (
-          <div>
-            <p style={{ fontSize: "13px", color: "#111827", marginTop: 0, marginBottom: "14px", textAlign: "center" }}>
-              Akun <strong>{chooseFor.name}</strong> terdaftar sebagai Wali Kelas dan Guru Mapel. Masuk sebagai:
-            </p>
-            <GreenBtn onClick={() => goWali(chooseFor)} style={{ width: "100%", padding: "11px", fontSize: "14px", marginBottom: "8px" }}>
-              👤 Wali Kelas — {kelasList(chooseFor).map((k) => CL?.[k]?.sh || k).join(", ")}
-            </GreenBtn>
-            <GreenBtn onClick={() => finalizeLogin(chooseFor, "guru")} style={{ width: "100%", padding: "11px", fontSize: "14px", background: "linear-gradient(135deg,#92400e,#b45309)" }}>
-              🧑‍🏫 Guru Mata Pelajaran
-            </GreenBtn>
-            <button onClick={() => setChooseFor(null)} style={{ width: "100%", marginTop: "10px", padding: "8px", background: "transparent", color: "#6b7280", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>
               ← Kembali
             </button>
           </div>
@@ -1129,7 +1113,7 @@ function DemoSec({ title, accounts, onSel }) {
   );
 }
 
-function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LEMBAGA, archives, onOpenArchive }) {
+function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LEMBAGA, archives, onOpenArchive, staffSection, onToggleStaffSection }) {
   const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309" };
   const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel" };
   const [showAcct, setShowAcct] = useState(false);
@@ -1187,6 +1171,11 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LE
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           {archives && Object.keys(archives).length > 0 && (
             <button onClick={onOpenArchive} title="Lihat data semester lalu (hanya lihat)" style={{ padding: "5px 10px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>🗄️ Arsip</button>
+          )}
+          {(user.role === "guru" || user.role === "wk") && (
+            <button onClick={onToggleStaffSection} title="Beralih antara Jadwal Pelajaran dan Rapor" style={{ padding: "5px 10px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>
+              {staffSection === "rapor" ? "🗓️ Jadwal Pelajaran" : "📋 Rapor"}
+            </button>
           )}
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</div>
@@ -4128,7 +4117,7 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM }) {
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
       <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px" }}>
         <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>🗓️ Jadwal Pelajaran</h2>
-        <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>Dibuat Super Admin di Susun Jadwal — {user.name} — Semester {semLabel(SEM)}</p>
+        <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>{user.name} — Semester {semLabel(SEM)}</p>
       </div>
       <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px", flexWrap: "wrap" }}>
         {tabs.map(([k, lbl]) => (
@@ -4385,7 +4374,7 @@ export default function App() {
         <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} SEM={SEM} LEMBAGA={LEMBAGA} />
       ) : (
         <>
-          <Header user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser} SEM={SEM} LEMBAGA={LEMBAGA} archives={archives} onOpenArchive={() => setViewingArchive(true)} />
+          <Header user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser} SEM={SEM} LEMBAGA={LEMBAGA} archives={archives} onOpenArchive={() => setViewingArchive(true)} staffSection={staffSection} onToggleStaffSection={() => setStaffSection((s) => (s === "rapor" ? "jadwal" : "rapor"))} />
           <div style={{ flex: 1, overflowY: "auto" }}>
             {viewingArchive ? (
               <ArchiveView archives={archives} LEMBAGA={LEMBAGA} onClose={() => setViewingArchive(false)} />
@@ -4393,15 +4382,6 @@ export default function App() {
               <>
                 {(user.role === "admin" || user.role === "superadmin") && (
                   <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} isSuperAdmin={user.role === "superadmin"} />
-                )}
-                {(user.role === "guru" || user.role === "wk") && (
-                  <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "16px 16px 0" }}>
-                    <div style={{ display: "flex", gap: "4px", background: "#f3f4f6", borderRadius: "10px", padding: "4px", maxWidth: "360px" }}>
-                      {[["rapor", "📋 Rapor"], ["jadwal", "🗓️ Jadwal Pelajaran"]].map(([k, lbl]) => (
-                        <button key={k} onClick={() => setStaffSection(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: staffSection === k ? "white" : "transparent", color: staffSection === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
-                      ))}
-                    </div>
-                  </div>
                 )}
                 {user.role === "guru" && staffSection === "rapor" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
                 {user.role === "wk" && staffSection === "rapor" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
