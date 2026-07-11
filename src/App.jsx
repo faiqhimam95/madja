@@ -968,6 +968,10 @@ function buildJadwalExcel(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, 
 const kelasList = (a) => Array.isArray(a.kelas) ? a.kelas : (a.kelas ? [a.kelas] : []);
 const isWaliAcc = (a) => kelasList(a).length > 0;
 const isGuruAcc = (a, GM) => (GM[a.u] || []).length > 0;
+// Accounts predate the "confirmed" field (added alongside the reset-without-delete
+// behavior), so undefined must read as confirmed — only an explicit false (set by
+// activateSemester on every non-admin account) locks data entry until Admin re-confirms.
+const isAccConfirmed = (a) => a?.confirmed !== false;
 
 function GreenBtn({ onClick, children, style = {} }) {
   return (
@@ -1393,11 +1397,10 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
     const ok = window.confirm(
       `PERINGATAN — TINDAKAN TIDAK BISA DIBATALKAN\n\n` +
       `Semester "${semLabel(SEM)}" akan diarsipkan (bisa dilihat lagi lewat tombol 🗄️ Arsip, tapi tidak bisa diubah).\n\n` +
-      `Mengaktifkan semester "${newLabel}" akan MENGHAPUS dari data aktif:\n` +
-      `• Semua nilai & Kepribadian/Absensi di semua kelas\n` +
-      `• Semua penugasan guru mapel\n` +
-      `• Semua akun Wali Kelas & Guru Mapel (login-nya akan hilang)\n\n` +
-      `Kelas, mata pelajaran, KKM, dan daftar siswa TETAP ada.\n\n` +
+      `Mengaktifkan semester "${newLabel}" akan MENGOSONGKAN dari data aktif:\n` +
+      `• Semua nilai & Kepribadian/Absensi di semua kelas\n\n` +
+      `Akun Wali Kelas & Guru Mapel beserta penugasannya TETAP ada (login tidak hilang), tapi dikunci sementara — Admin perlu mengkonfirmasi ulang tiap akun (tab Penugasan Guru) sebelum akun itu bisa input data lagi.\n\n` +
+      `Kelas, mata pelajaran, KKM, daftar siswa, dan Susun Jadwal TETAP ada seperti semula.\n\n` +
       `Lanjutkan?`
     );
     if (!ok) return;
@@ -1407,11 +1410,12 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
       [archiveKey]: { tipe: SEM.tipe, tahun: SEM.tahun, archivedAt: new Date().toISOString(), CL, ST, GM, ACCS, allG, allKep },
     }));
     setSEM({ tipe: semForm.tipe, tahun });
-    setGM({});
     setAllG({});
     setAllKep({});
-    setACCS((prev) => prev.filter((a) => a.role === "admin" || a.role === "superadmin"));
-    setCL((prev) => { const n = {}; Object.keys(prev).forEach((k) => { n[k] = { ...prev[k], wali: "-" }; }); return n; });
+    // Accounts & penugasan (GM) stay intact across the reset — only re-locked, not
+    // deleted, so a guru/wali can log in right after but can't input until Admin
+    // re-confirms them for the new semester (see AdminPenugasan's confirm toggle).
+    setACCS((prev) => prev.map((a) => (a.role === "admin" || a.role === "superadmin" ? a : { ...a, confirmed: false })));
     setShowSemModal(false);
   };
 
@@ -2152,6 +2156,13 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
     }
   };
 
+  // After a semester reset, every non-admin account starts locked (confirmed:false) —
+  // toggled per-account here, or in bulk, before that person can input nilai/kepribadian
+  // again. Undefined reads as confirmed (accounts created before this field existed).
+  const toggleConfirm = (u) => setACCS((p) => p.map((a) => (a.u === u ? { ...a, confirmed: !isAccConfirmed(a) } : a)));
+  const confirmAllAcc = () => setACCS((p) => p.map((a) => (a.role === "admin" || a.role === "superadmin" ? a : { ...a, confirmed: true })));
+  const unconfirmedCount = staffList.filter((a) => !isAccConfirmed(a)).length;
+
   const openDetail = (u) => { setSelGuru(u); setView("detail"); setEditingAsg(null); setEditingAcc(null); };
   const backToList = () => { setView("list"); setEditingAsg(null); setEditingAcc(null); };
 
@@ -2303,6 +2314,13 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
         {editingAcc === null && <GreenBtn onClick={startNewAcc}>+ Tambah Akun</GreenBtn>}
       </div>
 
+      {unconfirmedCount > 0 && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "10px", padding: "10px 14px", marginBottom: "12px" }}>
+          <span style={{ fontSize: "12px", color: "#92400e" }}>⏳ {unconfirmedCount} akun belum dikonfirmasi untuk semester ini — belum bisa input nilai/kepribadian sampai dikonfirmasi.</span>
+          <button onClick={confirmAllAcc} style={{ padding: "6px 12px", background: "#92400e", color: "white", border: "none", borderRadius: "8px", fontSize: "11px", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>✓ Konfirmasi Semua</button>
+        </div>
+      )}
+
       {editingAcc !== null && (
         <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginBottom: "10px" }}>
@@ -2348,7 +2366,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
-                {["Nama", "Username", "Password", "Wali Kelas", "Penugasan Mapel", "Aksi"].map((h) => (
+                {["Nama", "Username", "Password", "Wali Kelas", "Penugasan Mapel", "Status", "Aksi"].map((h) => (
                   <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
                 ))}
               </tr>
@@ -2356,6 +2374,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
             <tbody>
               {staffList.map((a) => {
                 const aAsgn = GM[a.u] || [];
+                const confirmed = isAccConfirmed(a);
                 return (
                   <tr key={a.u} style={{ borderBottom: "1px solid #f3f4f6" }}>
                     <td style={{ padding: "9px 12px", fontWeight: 500 }}>{a.name}</td>
@@ -2363,6 +2382,11 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
                     <td style={{ padding: "9px 12px", fontFamily: "monospace", color: "#9ca3af" }}>{a.p}</td>
                     <td style={{ padding: "9px 12px", color: "#047857" }}>{kelasList(a).length > 0 ? kelasList(a).map((k) => CL[k]?.sh || k).join(", ") : "-"}</td>
                     <td style={{ padding: "9px 12px", color: "#6b7280" }}>{aAsgn.length === 0 ? "-" : `${aAsgn.length} kelas (${aAsgn.reduce((s, x) => s + x.m.length, 0)} mapel)`}</td>
+                    <td style={{ padding: "9px 12px" }}>
+                      <button onClick={() => toggleConfirm(a.u)} title="Klik untuk mengubah status konfirmasi" style={{ padding: "4px 9px", background: confirmed ? "#d1fae5" : "#fef3c7", color: confirmed ? "#065f46" : "#92400e", border: "none", borderRadius: "20px", fontSize: "11px", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>
+                        {confirmed ? "✓ Dikonfirmasi" : "⏳ Menunggu"}
+                      </button>
+                    </td>
                     <td style={{ padding: "9px 12px" }}>
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                         <button onClick={() => startEditAcc(a.u)} style={{ padding: "5px 10px", background: "#ecfdf5", color: "#065f46", border: "none", borderRadius: "6px", fontSize: "11px", cursor: "pointer" }}>Edit</button>
@@ -2583,6 +2607,13 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   // not codes, so a long formal name doesn't fit as well as it does behind a legend).
   const updateGuruAlias = (kode, val) => {
     setJADWAL((p) => ({ ...p, guru: p.guru.map((g) => (g.kode === kode ? { ...g, alias: val } : g)) }));
+  };
+  // Explicit link to a "Penugasan Guru" (ACCS) login, so that account's own "Jadwal
+  // Pelajaran" view knows which JADWAL.guru kode is "them" for the Jadwal Pribadi tab.
+  // Deliberately manual (not name-matched) — names here and in ACCS can differ in
+  // spelling/gelar, and a wrong auto-match would silently show someone else's schedule.
+  const updateGuruAccsLink = (kode, accsUser) => {
+    setJADWAL((p) => ({ ...p, guru: p.guru.map((g) => (g.kode === kode ? { ...g, accsUser: accsUser || undefined } : g)) }));
   };
   const updateGuruKode = (i, val) => {
     const kode = val.trim().toUpperCase();
@@ -2971,12 +3002,18 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                     <td style={{ padding: "6px 8px" }}>
                       <input type="text" value={g.nama} onChange={(e) => updateGuruNama(i, e.target.value)} style={inputA} />
                     </td>
+                    <td style={{ padding: "6px 8px", width: "150px" }}>
+                      <select value={g.accsUser || ""} onChange={(e) => updateGuruAccsLink(g.kode, e.target.value)} style={{ ...inputA, fontSize: "11px", color: g.accsUser ? "#111827" : "#9ca3af" }} title="Hubungkan ke akun login Penugasan Guru, dipakai untuk 'Jadwal Pribadi' di akun guru itu">
+                        <option value="">— Akun ACCS —</option>
+                        {staffOptions.map((a) => <option key={a.u} value={a.u}>{a.name} ({a.u})</option>)}
+                      </select>
+                    </td>
                     <td style={{ padding: "6px 8px", width: "60px" }}>
                       <RedBtn onClick={() => removeGuru(i)} style={{ padding: "5px 8px", fontSize: "11px" }}>Hapus</RedBtn>
                     </td>
                   </tr>
                 ))}
-                {JADWAL.guru.length === 0 && <tr><td colSpan={3} style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada guru.</td></tr>}
+                {JADWAL.guru.length === 0 && <tr><td colSpan={4} style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada guru.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -3178,7 +3215,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
   );
 }
 
-function GuruView({ user, allG, setAllG, CL, ST, SEM }) {
+function GuruView({ user, allG, setAllG, CL, ST, SEM, locked = false }) {
   const asgn = user.asgn || [];
   const kelOpts = useMemo(() => [...new Set(asgn.map((a) => a.k))], [asgn]);
   const [selK, setK] = useState(kelOpts[0] || "");
@@ -3220,6 +3257,11 @@ function GuruView({ user, allG, setAllG, CL, ST, SEM }) {
         <h2 style={{ fontSize: "17px", fontWeight: 500, color: "#111827", marginBottom: "2px" }}>Input Nilai UAS</h2>
         <p style={{ fontSize: "12px", color: "#9ca3af" }}>Semester {semLabel(SEM)} — Nilai Kumulatif = (Harian × 40%) + (UAS × 60%)</p>
       </div>
+      {locked && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", fontSize: "12px", color: "#92400e" }}>
+          ⏳ Akun Anda belum dikonfirmasi Admin untuk semester ini — nilai bisa dilihat tapi belum bisa diubah/disimpan.
+        </div>
+      )}
       <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <div>
@@ -3273,14 +3315,14 @@ function GuruView({ user, allG, setAllG, CL, ST, SEM }) {
                       <td style={{ padding: "6px 8px", textAlign: "center", color: "#9ca3af", fontSize: "11px" }}>{i + 1}</td>
                       <td style={{ padding: "6px 10px", fontWeight: 500, fontSize: "12px", color: "#111827" }}>{nm}</td>
                       <td style={{ padding: "6px 8px", textAlign: "center" }}>
-                        <input type="number" min={0} max={100} value={g.h}
+                        <input type="number" min={0} max={100} value={g.h} disabled={locked}
                           onChange={(e) => { setLocal((p) => ({ ...p, [i]: { ...p[i], h: e.target.value } })); setSaved(false); }}
-                          style={{ width: "62px", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "6px", textAlign: "center", fontSize: "12px" }} />
+                          style={{ width: "62px", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "6px", textAlign: "center", fontSize: "12px", background: locked ? "#f3f4f6" : "white" }} />
                       </td>
                       <td style={{ padding: "6px 8px", textAlign: "center" }}>
-                        <input type="number" min={0} max={100} value={g.u}
+                        <input type="number" min={0} max={100} value={g.u} disabled={locked}
                           onChange={(e) => { setLocal((p) => ({ ...p, [i]: { ...p[i], u: e.target.value } })); setSaved(false); }}
-                          style={{ width: "62px", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "6px", textAlign: "center", fontSize: "12px" }} />
+                          style={{ width: "62px", padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: "6px", textAlign: "center", fontSize: "12px", background: locked ? "#f3f4f6" : "white" }} />
                       </td>
                       <td style={{ padding: "6px 8px", textAlign: "center" }}>
                         <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: "12px", fontWeight: 500, fontSize: "12px", ...nilaiSt(k) }}>{k !== null ? k : "—"}</span>
@@ -3294,7 +3336,7 @@ function GuruView({ user, allG, setAllG, CL, ST, SEM }) {
           </div>
           <div style={{ padding: "10px 14px", background: "#f9fafb", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             {saved ? <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#065f46", fontSize: "12px", fontWeight: 500, padding: "4px 10px", background: "#d1fae5", borderRadius: "20px" }}>✓ Tersimpan</span> : <span />}
-            <GreenBtn onClick={doSave}>💾 Simpan Nilai</GreenBtn>
+            {!locked && <GreenBtn onClick={doSave}>💾 Simpan Nilai</GreenBtn>}
           </div>
         </div>
       )}
@@ -3412,7 +3454,7 @@ function LegerNilai({ kelas, grades, CL, ST, kep, SEM }) {
   );
 }
 
-function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM, LEMBAGA = DEFAULT_LEMBAGA, readOnly = false }) {
+function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM, LEMBAGA = DEFAULT_LEMBAGA, readOnly = false, lockedLabel = "🔒 Mode Arsip — Hanya Lihat" }) {
   const sts = ST[kelas] || [];
   const cl = CL[kelas];
   const [lk, setLk] = useState({});
@@ -3527,7 +3569,7 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM, LEMBAG
       </div>
       <div style={{ padding: "10px 14px", background: "#f9fafb", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
         {readOnly ? (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#92400e", fontSize: "12px", fontWeight: 500, padding: "4px 10px", background: "#fef3c7", borderRadius: "20px" }}>🔒 Mode Arsip — Hanya Lihat</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#92400e", fontSize: "12px", fontWeight: 500, padding: "4px 10px", background: "#fef3c7", borderRadius: "20px" }}>{lockedLabel}</span>
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             {saved ? <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#065f46", fontSize: "12px", fontWeight: 500, padding: "4px 10px", background: "#d1fae5", borderRadius: "20px" }}>✓ Tersimpan</span> : <span />}
@@ -3846,7 +3888,7 @@ function RaportTab({ kelas, cl, sts, grades, kepData, SEM, LEMBAGA }) {
   );
 }
 
-function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM, LEMBAGA }) {
+function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM, LEMBAGA, locked = false }) {
   const [tab, setTab] = useState("leger");
   const kelasAll = (user.kelasAll && user.kelasAll.length > 0) ? user.kelasAll : [user.kelas].filter(Boolean);
   const activeKelas = user.kelas || kelasAll[0];
@@ -3873,9 +3915,220 @@ function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM, LEMBAGA }) {
           <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
         ))}
       </div>
+      {locked && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", fontSize: "12px", color: "#92400e" }}>
+          ⏳ Akun Anda belum dikonfirmasi Admin untuk semester ini — Kepribadian & Absensi bisa dilihat tapi belum bisa diubah/disimpan.
+        </div>
+      )}
       {tab === "leger" && <LegerNilai kelas={kelas} grades={allG[kelas] || {}} CL={CL} ST={ST} kep={allKep[kelas]} SEM={SEM} />}
-      {tab === "kepribadian" && <KepribadianView kelas={kelas} allKep={allKep} setAllKep={setAllKep} ST={ST} CL={CL} grades={allG[kelas] || {}} SEM={SEM} LEMBAGA={LEMBAGA} />}
+      {tab === "kepribadian" && <KepribadianView kelas={kelas} allKep={allKep} setAllKep={setAllKep} ST={ST} CL={CL} grades={allG[kelas] || {}} SEM={SEM} LEMBAGA={LEMBAGA} readOnly={locked} lockedLabel="⏳ Menunggu Konfirmasi Admin" />}
       {tab === "raport" && <RaportTab kelas={kelas} cl={cl} sts={sts} grades={allG[kelas] || {}} kepData={allKep[kelas]} SEM={SEM} LEMBAGA={LEMBAGA} />}
+    </div>
+  );
+}
+
+// Read-only schedule view for Wali Kelas / Guru Mapel logins, sourced from the Super
+// Admin's Susun Jadwal data — separate from the Rapor (grading) side of their account.
+// "Jadwal Pribadi" needs to know which JADWAL.guru kode is "this account", which only
+// works if Super Admin linked it via the "Akun ACCS" picker in Jadwal's Guru & Mapel tab
+// (JADWAL.guru[i].accsUser) — deliberately manual, see updateGuruAccsLink's comment.
+function jadwalPribadiRows(JADWAL, putraKelas, putriKelas, wustoPiMirror, myKode, mapelByKode) {
+  if (!myKode) return [];
+  const rows = [];
+  JADWAL_HARI.forEach((hari) => {
+    JADWAL_JAM.forEach((jam) => {
+      putraKelas.forEach((k) => {
+        const cell = JADWAL.grid?.[hari]?.[jam.kode]?.[k.kode];
+        if (cell?.g === myKode) rows.push({ hari, jamKode: jam.kode, waktu: jam.waktu, kelas: k.label, mapel: mapelByKode[cell.m]?.nama || cell.m || "-" });
+      });
+      putriKelas.forEach((k) => {
+        // Skip Putri kelas mirrored from Putra's WS I B/II B — already counted above,
+        // same real class, would otherwise show as a duplicate double-booking.
+        if (wustoPiMirror.putriToPutra[k.kode]) return;
+        const cell = JADWAL.gridPutri?.[hari]?.[jam.kode]?.[k.kode];
+        if (cell?.g === myKode) rows.push({ hari, jamKode: jam.kode, waktu: jam.waktu, kelas: k.label, mapel: mapelByKode[cell.m]?.nama || cell.m || "-" });
+      });
+    });
+  });
+  return rows;
+}
+
+function JadwalPribadiTab({ myGuru, rows }) {
+  if (!myGuru) {
+    return (
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
+        Akun Anda belum terhubung dengan data guru di Susun Jadwal. Hubungi Admin untuk menghubungkan akun ini lewat tab Susun Jadwal → Guru & Mapel.
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
+        Belum ada jadwal mengajar untuk "{myGuru.nama}" ({myGuru.kode}) di Susun Jadwal.
+      </div>
+    );
+  }
+  return (
+    <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+      <div style={{ padding: "10px 14px", background: "#064e3b", color: "white", fontSize: "13px", fontWeight: 500 }}>Jadwal Mengajar — {myGuru.nama} ({myGuru.kode})</div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+        <thead>
+          <tr style={{ background: "#f9fafb" }}>
+            {["Hari", "Jam", "Waktu", "Kelas", "Mata Pelajaran"].map((h) => (
+              <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+              <td style={{ padding: "8px 12px", fontWeight: 500 }}>{r.hari}</td>
+              <td style={{ padding: "8px 12px" }}>{r.jamKode}</td>
+              <td style={{ padding: "8px 12px", color: "#9ca3af" }}>{r.waktu}</td>
+              <td style={{ padding: "8px 12px", color: "#047857" }}>{r.kelas}</td>
+              <td style={{ padding: "8px 12px" }}>{r.mapel}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// One kelas x jam grid per Putra/Putri, for a single selected Hari.
+function JadwalPerHariTab({ hari, setHari, putraKelas, putriKelas, JADWAL, guruByKode, mapelByKode }) {
+  const cellLabel = (cell) => {
+    if (!cell?.g && !cell?.m) return "-";
+    const g = guruByKode[cell.g]?.alias || guruByKode[cell.g]?.nama || cell.g || "-";
+    const m = mapelByKode[cell.m]?.nama || cell.m || "-";
+    return `${g} — ${m}`;
+  };
+  const table = (title, kelasList, grid) => kelasList.length === 0 ? null : (
+    <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginBottom: "14px" }}>
+      <div style={{ padding: "10px 14px", background: "#064e3b", color: "white", fontSize: "13px", fontWeight: 500 }}>{title}</div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+          <thead>
+            <tr style={{ background: "#f9fafb" }}>
+              <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>Jam</th>
+              {kelasList.map((k) => <th key={k.kode} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{k.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {JADWAL_JAM.map((jam) => (
+              <tr key={jam.kode} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                <td style={{ padding: "8px 10px", fontWeight: 500 }}>{jam.kode} <span style={{ color: "#9ca3af", fontWeight: 400 }}>({jam.waktu})</span></td>
+                {kelasList.map((k) => <td key={k.kode} style={{ padding: "8px 10px" }}>{cellLabel(grid?.[hari]?.[jam.kode]?.[k.kode])}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+  return (
+    <div>
+      <div style={{ marginBottom: "14px" }}>
+        <label style={labelA}>Hari</label>
+        <select value={hari} onChange={(e) => setHari(e.target.value)} style={{ ...inputA, maxWidth: "220px" }}>
+          {JADWAL_HARI.map((h) => <option key={h} value={h}>{h}</option>)}
+        </select>
+      </div>
+      {table("Jadwal Putra", putraKelas, JADWAL.grid)}
+      {table("Jadwal Putri", putriKelas, JADWAL.gridPutri)}
+    </div>
+  );
+}
+
+// One hari x jam grid for a single selected kelas, across the whole week.
+function JadwalPerKelasTab({ kelasKode, setKelasKode, putraKelas, putriKelas, JADWAL, guruByKode, mapelByKode }) {
+  const allKelas = [...putraKelas.map((k) => ({ ...k, layer: "putra" })), ...putriKelas.map((k) => ({ ...k, layer: "putri" }))];
+  const active = allKelas.find((k) => k.kode === kelasKode) || allKelas[0];
+  const grid = active?.layer === "putri" ? JADWAL.gridPutri : JADWAL.grid;
+  return (
+    <div>
+      <div style={{ marginBottom: "14px" }}>
+        <label style={labelA}>Kelas</label>
+        <select value={active?.kode || ""} onChange={(e) => setKelasKode(e.target.value)} style={{ ...inputA, maxWidth: "260px" }}>
+          <optgroup label="Jadwal Putra">{putraKelas.map((k) => <option key={k.kode} value={k.kode}>{k.label}</option>)}</optgroup>
+          <optgroup label="Jadwal Putri">{putriKelas.map((k) => <option key={k.kode} value={k.kode}>{k.label}</option>)}</optgroup>
+        </select>
+      </div>
+      {active && (
+        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <div style={{ padding: "10px 14px", background: "#064e3b", color: "white", fontSize: "13px", fontWeight: 500 }}>{active.label}</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb" }}>
+                {["Hari", "Jam", "Waktu", "Guru", "Mata Pelajaran"].map((h) => (
+                  <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {JADWAL_HARI.map((hari) => JADWAL_JAM.map((jam, ji) => {
+                const cell = grid?.[hari]?.[jam.kode]?.[active.kode];
+                const g = cell?.g ? (guruByKode[cell.g]?.nama || cell.g) : "-";
+                const m = cell?.m ? (mapelByKode[cell.m]?.nama || cell.m) : "-";
+                return (
+                  <tr key={hari + jam.kode} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    {ji === 0 && <td rowSpan={2} style={{ padding: "8px 12px", fontWeight: 500, verticalAlign: "top" }}>{hari}</td>}
+                    <td style={{ padding: "8px 12px" }}>{jam.kode}</td>
+                    <td style={{ padding: "8px 12px", color: "#9ca3af" }}>{jam.waktu}</td>
+                    <td style={{ padding: "8px 12px", color: "#047857" }}>{g}</td>
+                    <td style={{ padding: "8px 12px" }}>{m}</td>
+                  </tr>
+                );
+              }))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM }) {
+  const [tab, setTab] = useState("pribadi");
+  const putraKelas = useMemo(() => jadwalPutraKelas(JADWAL), [JADWAL.kelasPutra]); // eslint-disable-line
+  const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}, JADWAL), [CL, JADWAL.kelasPutriNama, JADWAL.kelasPutra]); // eslint-disable-line
+  const wustoPiMirror = useMemo(() => computeWustoPiMirror(putriKelas), [putriKelas]);
+  const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
+  const mapelByKode = useMemo(() => Object.fromEntries((JADWAL.mapel || []).map((m) => [m.kode, m])), [JADWAL.mapel]);
+  const myGuru = (JADWAL.guru || []).find((g) => g.accsUser === user.username) || null;
+  const [hari, setHari] = useState(JADWAL_HARI[0]);
+  const [kelasKode, setKelasKode] = useState(putraKelas[0]?.kode || "");
+
+  const pribadiRows = useMemo(
+    () => jadwalPribadiRows(JADWAL, putraKelas, putriKelas, wustoPiMirror, myGuru?.kode, mapelByKode),
+    [JADWAL, putraKelas, putriKelas, wustoPiMirror, myGuru, mapelByKode]
+  );
+  const jadwalFullHTML = useMemo(
+    () => buildJadwalHTML(JADWAL, LEMBAGA, SEM, putriKelas, false, putraKelas),
+    [JADWAL, LEMBAGA, SEM, putriKelas, putraKelas]
+  );
+
+  const tabs = [["pribadi", "👤 Jadwal Pribadi"], ["hari", "📅 Per Hari"], ["kelas", "🏫 Per Kelas"], ["semua", "🗓️ Semua Jadwal"]];
+
+  return (
+    <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
+      <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px" }}>
+        <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>🗓️ Jadwal Pelajaran</h2>
+        <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>Dibuat Super Admin di Susun Jadwal — {user.name} — Semester {semLabel(SEM)}</p>
+      </div>
+      <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px", flexWrap: "wrap" }}>
+        {tabs.map(([k, lbl]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ flex: "1 1 auto", padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
+        ))}
+      </div>
+      {tab === "pribadi" && <JadwalPribadiTab myGuru={myGuru} rows={pribadiRows} />}
+      {tab === "hari" && <JadwalPerHariTab hari={hari} setHari={setHari} putraKelas={putraKelas} putriKelas={putriKelas} JADWAL={JADWAL} guruByKode={guruByKode} mapelByKode={mapelByKode} />}
+      {tab === "kelas" && <JadwalPerKelasTab kelasKode={kelasKode} setKelasKode={setKelasKode} putraKelas={putraKelas} putriKelas={putriKelas} JADWAL={JADWAL} guruByKode={guruByKode} mapelByKode={mapelByKode} />}
+      {tab === "semua" && (
+        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <iframe title="Jadwal Keseluruhan" srcDoc={jadwalFullHTML} style={{ width: "100%", height: "1400px", border: "none", display: "block" }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -4093,6 +4346,7 @@ export default function App() {
   const [JADWAL, setJADWAL, jadwalReady] = useRemoteState("JADWAL", DEFAULT_JADWAL);
   const [archives, setArchives, archivesReady] = useRemoteState("archives", {});
   const [viewingArchive, setViewingArchive] = useState(false);
+  const [staffSection, setStaffSection] = useState("rapor"); // "rapor" | "jadwal" — Wali Kelas/Guru Mapel switcher
 
   // One-time self-healing migration: make sure a Super Admin account always exists,
   // even on deployments whose ACCS data predates this role.
@@ -4102,6 +4356,10 @@ export default function App() {
       setACCS((prev) => [...prev, { u: "superadmin", p: "super123", role: "superadmin", name: "Super Admin" }]);
     }
   }, [accsReady]); // eslint-disable-line
+
+  // Reset back to Rapor whenever the logged-in account changes (login/logout/role switch),
+  // so the next person never inherits whatever tab the previous session left open.
+  useEffect(() => { setStaffSection("rapor"); }, [user?.username, user?.role]);
 
   if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady)) {
     return <LoadingScreen />;
@@ -4122,8 +4380,18 @@ export default function App() {
                 {(user.role === "admin" || user.role === "superadmin") && (
                   <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} isSuperAdmin={user.role === "superadmin"} />
                 )}
-                {user.role === "guru" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} />}
-                {user.role === "wk" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} />}
+                {(user.role === "guru" || user.role === "wk") && (
+                  <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "16px 16px 0" }}>
+                    <div style={{ display: "flex", gap: "4px", background: "#f3f4f6", borderRadius: "10px", padding: "4px", maxWidth: "360px" }}>
+                      {[["rapor", "📋 Rapor"], ["jadwal", "🗓️ Jadwal Pelajaran"]].map(([k, lbl]) => (
+                        <button key={k} onClick={() => setStaffSection(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: staffSection === k ? "white" : "transparent", color: staffSection === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {user.role === "guru" && staffSection === "rapor" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
+                {user.role === "wk" && staffSection === "rapor" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
+                {(user.role === "guru" || user.role === "wk") && staffSection === "jadwal" && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} />}
               </>
             )}
           </div>
