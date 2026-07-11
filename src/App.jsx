@@ -114,30 +114,29 @@ const JADWAL_JAM = [
 // columns are read live from CL — see jadwalPutriKelas().
 //
 // The kode below (awia, wsipa, ...) is the storage key for already-saved schedule
-// cells and intentionally stays fixed forever, independent of CL — renaming a kelas
-// in CL must never orphan existing Jadwal data. clKey points at the matching CL entry
-// so jadwalPutraKelas() below can pull the DISPLAYED label from CL (kept in sync by
-// name/abbreviation), falling back to these defaults if CL is missing that key. WS I/II
-// A and WS I/II B both derive from the SAME CL entry (ws1/ws2) — A and B are just the
-// Putra/Putri half of the same grade — so their base name always matches exactly.
+// cells and intentionally stays fixed forever. Labels used to be synced live from CL,
+// but that indirection (go edit a different admin tab to rename a Jadwal column) proved
+// more confusing than helpful, so they're now edited directly in Jadwal's own "Guru &
+// Mapel" tab and stored in JADWAL.kelasPutra — clKey is kept only so the Ketentuan Guru
+// mata-pelajaran picker can still look up that kelas's real subject list from CL.
 const JADWAL_PUTRA_STRUCT = [
   { kode: "awia", clKey: "aw1a", grup: "Awwaliyah", fallback: "AW I A" },
-  { kode: "awib", clKey: "aw1b", grup: "Awwaliyah", fallback: "AW IB" },
-  { kode: "awiia", clKey: "aw2a", grup: "Awwaliyah", fallback: "AW IIA" },
-  { kode: "awiib", clKey: "aw2b", grup: "Awwaliyah", fallback: "AW IIB" },
-  { kode: "awiiia", clKey: "aw3a", grup: "Awwaliyah", fallback: "AW IIIA" },
-  { kode: "wsipa", clKey: "ws1", grup: "Wustho", suffix: "A", fallback: "WS I A" },
-  { kode: "wsiipa", clKey: "ws2", grup: "Wustho", suffix: "A", fallback: "WS II A" },
-  { kode: "wsipi", clKey: "ws1", grup: "Wustho", suffix: "B", fallback: "WS I B" },
-  { kode: "wsiipi", clKey: "ws2", grup: "Wustho", suffix: "B", fallback: "WS II B" },
+  { kode: "awib", clKey: "aw1b", grup: "Awwaliyah", fallback: "AW I B" },
+  { kode: "awiia", clKey: "aw2a", grup: "Awwaliyah", fallback: "AW II A" },
+  { kode: "awiib", clKey: "aw2b", grup: "Awwaliyah", fallback: "AW II B" },
+  { kode: "awiiia", clKey: "aw3a", grup: "Awwaliyah", fallback: "AW III A" },
+  { kode: "wsipa", clKey: "ws1", grup: "Wustho", fallback: "WS I A" },
+  { kode: "wsiipa", clKey: "ws2", grup: "Wustho", fallback: "WS II A" },
+  { kode: "wsipi", clKey: "ws1", grup: "Wustho", fallback: "WS I B" },
+  { kode: "wsiipi", clKey: "ws2", grup: "Wustho", fallback: "WS II B" },
 ];
 const JADWAL_PUTRA_CLKEY = Object.fromEntries(JADWAL_PUTRA_STRUCT.map((s) => [s.kode, s.clKey]));
-function jadwalPutraKelas(CL) {
-  return JADWAL_PUTRA_STRUCT.map(({ kode, clKey, grup, suffix, fallback }) => {
-    const clLabel = clKey ? (CL?.[clKey]?.sh || CL?.[clKey]?.name) : null;
-    const label = clLabel ? (suffix ? `${clLabel} ${suffix}` : clLabel) : fallback;
-    return { kode, label, grup };
-  });
+function jadwalPutraKelas(JADWAL) {
+  return JADWAL_PUTRA_STRUCT.map(({ kode, grup, fallback }) => ({
+    kode,
+    label: JADWAL?.kelasPutra?.[kode] || fallback,
+    grup,
+  }));
 }
 // Contiguous run-length grouping of a kelas list by `grup`, for group-header colspans.
 function jadwalGroups(kelasList) {
@@ -213,6 +212,13 @@ const jc = (g, m) => ({ g, m: String(m) });
 const DEFAULT_JADWAL = {
   guru: DEFAULT_JADWAL_GURU,
   mapel: DEFAULT_JADWAL_MAPEL,
+  // Jadwal Putra's column labels, keyed by the fixed kode from JADWAL_PUTRA_STRUCT —
+  // edited directly in the "Guru & Mapel" tab. Seeded to match what CL-derived sync used
+  // to produce, so existing deployments see no visual change until someone edits one.
+  kelasPutra: {
+    awia: "AW I A", awib: "AW I B", awiia: "AW II A", awiib: "AW II B", awiiia: "AW III A",
+    wsipa: "WS I A", wsiipa: "WS II A", wsipi: "WS I B", wsiipi: "WS II B",
+  },
   // Per-guru teaching constraints, keyed by kode guru. kelasBoleh: [] means unrestricted
   // (may teach any kelas); mapelPerKelas: { [kelasKode]: [kodeMapel,...] } lists which
   // subject(s) that guru teaches in a given kelas — used to auto-fill/restrict the mapel
@@ -2454,10 +2460,10 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   // Jadwal Putri's columns mirror the Dashboard's "Rekap Per Kelas" Putri grouping —
   // any CL kelas not in the default KELAS_ORDER (e.g. aw1c, ws1pi, ...).
   const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}), [CL]);
-  // Jadwal Putra's columns (kode fixed, label synced by name/abbreviation to CL).
-  const putraKelas = useMemo(() => jadwalPutraKelas(CL || {}), [CL]);
-  // WS I PI / WS II PI (Putra) and whichever Putri kelas is literally named "WS I Pi" /
-  // "WS II Pi" are the same real classes, not two — see computeWustoPiMirror.
+  // Jadwal Putra's columns — kode fixed, label edited directly (see updateKelasPutraLabel).
+  const putraKelas = useMemo(() => jadwalPutraKelas(JADWAL), [JADWAL.kelasPutra]); // eslint-disable-line
+  // WS I B / WS II B (Putra) and the 1st/2nd "Wustho"-grouped Putri kelas are the same
+  // real classes, not two — see computeWustoPiMirror.
   const wustoPiMirror = useMemo(() => computeWustoPiMirror(putriKelas), [putriKelas]);
 
   // Actually filling in the grid (Jadwal Putra/Putri cells + Guru Piket) is buffered
@@ -2636,6 +2642,11 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   };
   const updateMapelNama = (i, val) => {
     setJADWAL((p) => ({ ...p, mapel: p.mapel.map((m, idx) => (idx === i ? { ...m, nama: val } : m)) }));
+  };
+  // Jadwal Putra's kelas kode/count is fixed (JADWAL_PUTRA_STRUCT) — only the displayed
+  // label is editable, right here, instead of needing to go rename a kelas in CL.
+  const updateKelasPutraLabel = (kode, val) => {
+    setJADWAL((p) => ({ ...p, kelasPutra: { ...(p.kelasPutra || {}), [kode]: val } }));
   };
   const updateMapelKode = (i, val) => {
     const kode = val.trim();
@@ -2828,7 +2839,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
           <PiketEditor title="🎫 Guru Piket — Putra" piket={draftGrid.piketPutra} onChange={(h, j, v) => setPiket("putra", h, j, v)} />
 
           <h3 style={{ fontSize: "13px", fontWeight: 600, color: "#111827", margin: "28px 0 4px" }}>Jadwal Putri</h3>
-          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0 }}>Kelas di sini mengikuti kelas Putri yang terdaftar di Dashboard → Rekap Per Kelas (kelas di luar kelompok default). Wustho Putri (WS I PI / WS II PI) tetap ada di tabel Jadwal Putra di atas — keduanya kelas yang sama, jadi mengisi salah satu otomatis mengisi yang lain juga. Guru Piket Putri menempel langsung sebagai kolom terakhir, mengikuti hari & jam jadwal ini.</p>
+          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0 }}>Kelas di sini mengikuti kelas Putri yang terdaftar di Dashboard → Rekap Per Kelas (kelas di luar kelompok default). Wustho Putri (WS I B / WS II B) tetap ada di tabel Jadwal Putra di atas — keduanya kelas yang sama, jadi mengisi salah satu otomatis mengisi yang lain juga. Guru Piket Putri menempel langsung sebagai kolom terakhir, mengikuti hari & jam jadwal ini.</p>
           {putriKelas.length === 0 ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
               Belum ada kelas Putri. Tambahkan kelas baru (kode di luar aw1a/aw1b/aw2a/aw2b/aw3a/ws1/ws2) lewat tab "🏫 Kelas" — otomatis akan muncul di sini dan di Rekap Per Kelas.
@@ -2892,6 +2903,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
       )}
 
       {tab === "master" && (
+        <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
           <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
             <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
@@ -2957,6 +2969,22 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
             </table>
           </div>
         </div>
+
+        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "14px" }}>
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb" }}>
+            <span style={{ fontSize: "13px", fontWeight: 500 }}>Nama Kelas — Jadwal Putra</span>
+            <p style={{ fontSize: "11px", color: "#9ca3af", margin: "4px 0 0" }}>Nama kolom kelas di tabel Jadwal Putra, diedit langsung di sini. Jumlah & urutan kelas tetap (5 Awwaliyah + 4 Wustho); "WS I B"/"WS II B" tetap kelas yang sama dengan pasangannya di Jadwal Putri walau namanya diubah.</p>
+          </div>
+          <div style={{ padding: "14px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px" }}>
+            {putraKelas.map((k) => (
+              <div key={k.kode}>
+                <label style={labelA}>{k.grup === "Awwaliyah" ? "🕌" : "📗"} {k.kode}</label>
+                <input type="text" value={JADWAL.kelasPutra?.[k.kode] || ""} onChange={(e) => updateKelasPutraLabel(k.kode, e.target.value)} placeholder={JADWAL_PUTRA_STRUCT.find((s) => s.kode === k.kode)?.fallback} style={inputA} />
+              </div>
+            ))}
+          </div>
+        </div>
+        </>
       )}
 
       {tab === "ketentuan" && (
