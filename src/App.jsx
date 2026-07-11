@@ -1182,7 +1182,6 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LE
           {LEMBAGA.logo && <img src={LEMBAGA.logo} alt="Logo" style={{ width: "26px", height: "26px", objectFit: "contain" }} />}
           <div>
             <div style={{ fontSize: "14px", fontWeight: 500 }}>{LEMBAGA.logo ? "" : "🕌 "}{LEMBAGA.namaSingkat}</div>
-            <div style={{ fontSize: "11px", opacity: 0.7 }}>Sistem Nilai — {semLabel(SEM)}</div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -4361,7 +4360,7 @@ export default function App() {
   const [JADWAL, setJADWAL, jadwalReady] = useRemoteState("JADWAL", DEFAULT_JADWAL);
   const [archives, setArchives, archivesReady] = useRemoteState("archives", {});
   const [viewingArchive, setViewingArchive] = useState(false);
-  const [staffSection, setStaffSection] = useState("rapor"); // "rapor" | "jadwal" — Wali Kelas/Guru Mapel switcher
+  const [staffSection, setStaffSection] = useState("jadwal"); // "rapor" | "jadwal" — Wali Kelas/Guru Mapel switcher
 
   // One-time self-healing migration: make sure a Super Admin account always exists,
   // even on deployments whose ACCS data predates this role.
@@ -4372,9 +4371,9 @@ export default function App() {
     }
   }, [accsReady]); // eslint-disable-line
 
-  // Reset back to Rapor whenever the logged-in account changes (login/logout/role switch),
-  // so the next person never inherits whatever tab the previous session left open.
-  useEffect(() => { setStaffSection("rapor"); }, [user?.username, user?.role]);
+  // Reset back to Jadwal Pelajaran whenever the logged-in account changes (login/logout/
+  // role switch), so the next person never inherits whatever tab the previous session left open.
+  useEffect(() => { setStaffSection("jadwal"); }, [user?.username, user?.role]);
 
   if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady)) {
     return <LoadingScreen />;
