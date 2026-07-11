@@ -150,21 +150,23 @@ function jadwalGroups(kelasList) {
 }
 // The "Jadwal Putri" table's columns mirror the Dashboard's "Rekap Per Kelas" Putri
 // grouping exactly: any CL kelas whose key isn't one of the default KELAS_ORDER ones
-// (see sortedKelas below). The first two "Wustho"-grouped entries are shown as "WS I B"
-// / "WS II B" (matching Jadwal Putra's "WS I A" / "WS II A" base name) rather than
-// whatever their own CL Singkatan happens to be — they intentionally also have fixed
-// mirror columns in jadwalPutraKelas() above, so both tables must read identically.
-function jadwalPutriKelas(CL) {
+// (see sortedKelas below). Labels are editable directly in Jadwal's "Guru & Mapel" tab
+// (JADWAL.kelasPutriNama), falling back to CL's Singkatan/Nama when not overridden. The
+// first two "Wustho"-grouped entries are the SAME real classes as Jadwal Putra's "WS I
+// B" / "WS II B" (see computeWustoPiMirror), so they intentionally read their label from
+// JADWAL.kelasPutra instead — one shared name for one shared class, edited in one place.
+function jadwalPutriKelas(CL, JADWAL) {
   const raw = sortedKelas(CL)
     .filter((k) => !KELAS_ORDER.includes(k))
-    .map((k) => ({ kode: k, label: CL[k]?.sh || CL[k]?.name || k, grup: k.startsWith("ws") ? "Wustho" : "Awwaliyah" }));
-  const wustoBase = ["ws1", "ws2"];
+    .map((k) => ({ kode: k, label: JADWAL?.kelasPutriNama?.[k] || CL[k]?.sh || CL[k]?.name || k, grup: k.startsWith("ws") ? "Wustho" : "Awwaliyah" }));
+  const wustoPutraKode = ["wsipi", "wsiipi"];
   let wi = 0;
   return raw.map((k) => {
-    if (k.grup !== "Wustho" || wi >= wustoBase.length) return k;
-    const base = CL?.[wustoBase[wi]]?.sh || CL?.[wustoBase[wi]]?.name || (wi === 0 ? "WS I" : "WS II");
+    if (k.grup !== "Wustho" || wi >= wustoPutraKode.length) return k;
+    const putraKode = wustoPutraKode[wi];
+    const label = JADWAL?.kelasPutra?.[putraKode] || JADWAL_PUTRA_STRUCT.find((s) => s.kode === putraKode)?.fallback;
     wi++;
-    return { ...k, label: `${base} B` };
+    return { ...k, label };
   });
 }
 const JADWAL_PALETTE = ["#fde68a", "#bbf7d0", "#bfdbfe", "#fbcfe8", "#ddd6fe", "#fed7aa", "#a7f3d0", "#fecaca", "#c7d2fe", "#fef08a", "#99f6e4", "#e9d5ff", "#fca5a5", "#bae6fd", "#d9f99d", "#f5d0fe", "#fdba74"];
@@ -219,6 +221,11 @@ const DEFAULT_JADWAL = {
     awia: "AW I A", awib: "AW I B", awiia: "AW II A", awiib: "AW II B", awiiia: "AW III A",
     wsipa: "WS I A", wsiipa: "WS II A", wsipi: "WS I B", wsiipi: "WS II B",
   },
+  // Jadwal Putri's column label overrides, keyed by the live CL kelas kode (e.g. "aw1c") —
+  // edited directly in the "Guru & Mapel" tab. Empty by default: falls back to CL's own
+  // Singkatan/Nama until overridden. The Wustho Putri companion columns (mirrored with
+  // Jadwal Putra's "WS I/II B") are excluded — they share kelasPutra's label instead.
+  kelasPutriNama: {},
   // Per-guru teaching constraints, keyed by kode guru. kelasBoleh: [] means unrestricted
   // (may teach any kelas); mapelPerKelas: { [kelasKode]: [kodeMapel,...] } lists which
   // subject(s) that guru teaches in a given kelas — used to auto-fill/restrict the mapel
@@ -2405,46 +2412,75 @@ function PiketEditor({ title, piket, onChange }) {
   );
 }
 
-// Kelas listed as a horizontal row of chips; checking one reveals its own mata
-// pelajaran picker as a vertical list underneath (stacked below the chip row, one
-// block per checked kelas) — mapel options come from that kelas's real "Mata
-// Pelajaran" list in CL (via clKeyOf), not Jadwal's full 16-entry mapel list.
-function KetentuanKelasGroup({ label, kelasArr, kelasBoleh, mapelPerKelas, JADWAL, CL, clKeyOf, onToggleKelas, onToggleMapel }) {
-  if (kelasArr.length === 0) return null;
-  return (
-    <div style={{ marginBottom: "10px" }}>
-      <div style={{ fontSize: "10px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", marginBottom: "4px" }}>{label}</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
-        {kelasArr.map((k) => {
-          const checked = kelasBoleh.includes(k.kode);
-          return (
-            <label key={k.kode} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", border: "1px solid " + (checked ? "#047857" : "#d1d5db"), background: checked ? "#ecfdf5" : "white", fontSize: "11px", cursor: "pointer" }}>
-              <input type="checkbox" checked={checked} onChange={(e) => onToggleKelas(k.kode, e.target.checked)} />
+// Kelas laid out as a table (Putra row, Putri row, kelas as columns within each row) —
+// clicking a kelas cell (or its checkbox) makes it the "active" kelas, whose mata
+// pelajaran picker then shows as its own table directly below, instead of one mapel
+// block per checked kelas scattered down the page. Mapel options come from that
+// kelas's real "Mata Pelajaran" list in CL, not Jadwal's full 16-entry mapel list.
+function KetentuanKelasEditor({ putraKelas, putriKelas, kelasBoleh, mapelPerKelas, JADWAL, CL, onToggleKelas, onToggleMapel }) {
+  const [active, setActive] = useState(null);
+  const allKelas = useMemo(
+    () => [
+      ...putraKelas.map((k) => ({ ...k, clKey: JADWAL_PUTRA_CLKEY[k.kode] })),
+      ...putriKelas.map((k) => ({ ...k, clKey: k.kode })),
+    ],
+    [putraKelas, putriKelas]
+  );
+  const activeInfo = allKelas.find((k) => k.kode === active) || null;
+  const mapelOptions = activeInfo ? jadwalMapelForKelas(JADWAL, CL, activeInfo.clKey) : [];
+  const mapelSel = activeInfo ? (mapelPerKelas[activeInfo.kode] || []) : [];
+
+  const kelasRow = (label, kelasArr) => kelasArr.length === 0 ? null : (
+    <tr>
+      <td style={{ padding: "5px 8px", fontWeight: 600, fontSize: "10px", color: "#9ca3af", textTransform: "uppercase", whiteSpace: "nowrap", verticalAlign: "middle", border: "1px solid #e5e7eb" }}>{label}</td>
+      {kelasArr.map((k) => {
+        const checked = kelasBoleh.includes(k.kode);
+        const isActive = active === k.kode;
+        return (
+          <td key={k.kode} onClick={() => setActive(k.kode)} style={{ padding: "4px 8px", border: "1px solid #e5e7eb", cursor: "pointer", whiteSpace: "nowrap", background: isActive ? "#dbeafe" : checked ? "#ecfdf5" : "white" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", cursor: "pointer" }}>
+              <input type="checkbox" checked={checked} onChange={(e) => { onToggleKelas(k.kode, e.target.checked); setActive(k.kode); }} onClick={(e) => e.stopPropagation()} />
               {k.label}
             </label>
-          );
-        })}
-      </div>
-      {kelasArr.filter((k) => kelasBoleh.includes(k.kode)).map((k) => {
-        const mapelSel = mapelPerKelas[k.kode] || [];
-        const mapelOptions = jadwalMapelForKelas(JADWAL, CL, clKeyOf(k.kode));
-        return (
-          <div key={k.kode} style={{ marginBottom: "10px", paddingLeft: "8px", borderLeft: "2px solid #d1d5db" }}>
-            <div style={{ fontSize: "10px", fontWeight: 600, color: "#4b5563", marginBottom: "4px" }}>{k.label} — Mata Pelajaran</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-              {mapelOptions.map((m) => {
-                const mchecked = mapelSel.includes(m.kode);
-                return (
-                  <label key={m.kode} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", cursor: "pointer" }}>
-                    <input type="checkbox" checked={mchecked} onChange={(e) => onToggleMapel(k.kode, m.kode, e.target.checked)} />
-                    {m.nama}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+          </td>
         );
       })}
+    </tr>
+  );
+
+  return (
+    <div>
+      <div style={{ overflowX: "auto", marginBottom: "10px" }}>
+        <table style={{ borderCollapse: "collapse" }}>
+          <tbody>
+            {kelasRow("Jadwal Putra", putraKelas)}
+            {kelasRow("Jadwal Putri", putriKelas)}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: "11px", minWidth: "240px" }}>
+          <thead>
+            <tr><th colSpan={2} style={{ padding: "5px 8px", background: "#f3f4f6", border: "1px solid #e5e7eb", textAlign: "left" }}>Mata Pelajaran{activeInfo ? ` — ${activeInfo.label}` : ""}</th></tr>
+          </thead>
+          <tbody>
+            {!activeInfo && (
+              <tr><td style={{ padding: "8px", color: "#9ca3af", fontSize: "11px", border: "1px solid #e5e7eb" }}>Klik salah satu kelas di atas untuk mengatur mata pelajarannya.</td></tr>
+            )}
+            {activeInfo && mapelOptions.map((m) => {
+              const mchecked = mapelSel.includes(m.kode);
+              return (
+                <tr key={m.kode}>
+                  <td style={{ padding: "3px 8px", width: "24px", border: "1px solid #e5e7eb" }}>
+                    <input type="checkbox" checked={mchecked} onChange={(e) => onToggleMapel(activeInfo.kode, m.kode, e.target.checked)} />
+                  </td>
+                  <td style={{ padding: "3px 8px", border: "1px solid #e5e7eb" }}>{m.nama}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -2459,7 +2495,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
 
   // Jadwal Putri's columns mirror the Dashboard's "Rekap Per Kelas" Putri grouping —
   // any CL kelas not in the default KELAS_ORDER (e.g. aw1c, ws1pi, ...).
-  const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}), [CL]);
+  const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}, JADWAL), [CL, JADWAL.kelasPutriNama, JADWAL.kelasPutra]); // eslint-disable-line
   // Jadwal Putra's columns — kode fixed, label edited directly (see updateKelasPutraLabel).
   const putraKelas = useMemo(() => jadwalPutraKelas(JADWAL), [JADWAL.kelasPutra]); // eslint-disable-line
   // WS I B / WS II B (Putra) and the 1st/2nd "Wustho"-grouped Putri kelas are the same
@@ -2475,7 +2511,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   // data (e.g. from the original seed) and the mirrored Jadwal Putri cell is still
   // blank, the Putri side is backfilled so the two tables agree from the start.
   const [draftGrid, setDraftGrid] = useState(() => {
-    const mirror = computeWustoPiMirror(jadwalPutriKelas(CL || {}));
+    const mirror = computeWustoPiMirror(jadwalPutriKelas(CL || {}, JADWAL));
     return { grid: JADWAL.grid, gridPutri: reconcileWustoPi(JADWAL.grid, JADWAL.gridPutri, mirror), piketPutra: JADWAL.piketPutra, piketPutri: JADWAL.piketPutri };
   });
   const [undoStack, setUndoStack] = useState([]);
@@ -2647,6 +2683,11 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   // label is editable, right here, instead of needing to go rename a kelas in CL.
   const updateKelasPutraLabel = (kode, val) => {
     setJADWAL((p) => ({ ...p, kelasPutra: { ...(p.kelasPutra || {}), [kode]: val } }));
+  };
+  // Jadwal Putri's kelas SET stays live from CL (classes are added/removed via the
+  // "Kelas" tab), but the displayed label can be overridden here without touching CL.
+  const updateKelasPutriLabel = (kode, val) => {
+    setJADWAL((p) => ({ ...p, kelasPutriNama: { ...(p.kelasPutriNama || {}), [kode]: val } }));
   };
   const updateMapelKode = (i, val) => {
     const kode = val.trim();
@@ -2984,6 +3025,25 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
             ))}
           </div>
         </div>
+
+        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "14px" }}>
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb" }}>
+            <span style={{ fontSize: "13px", fontWeight: 500 }}>Nama Kelas — Jadwal Putri</span>
+            <p style={{ fontSize: "11px", color: "#9ca3af", margin: "4px 0 0" }}>Nama kolom kelas di tabel Jadwal Putri, diedit langsung di sini (daftar kelasnya sendiri tetap mengikuti kelas Putri di tab "Kelas"). WS I B/WS II B tidak muncul di sini — namanya diatur bersama Jadwal Putra di atas karena kelas yang sama.</p>
+          </div>
+          {putriKelas.filter((k) => !wustoPiMirror.putriToPutra[k.kode]).length === 0 ? (
+            <div style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kelas Putri lain di luar Wustho.</div>
+          ) : (
+            <div style={{ padding: "14px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px" }}>
+              {putriKelas.filter((k) => !wustoPiMirror.putriToPutra[k.kode]).map((k) => (
+                <div key={k.kode}>
+                  <label style={labelA}>{k.grup === "Awwaliyah" ? "🕌" : "📗"} {k.kode}</label>
+                  <input type="text" value={JADWAL.kelasPutriNama?.[k.kode] || ""} onChange={(e) => updateKelasPutriLabel(k.kode, e.target.value)} placeholder={k.label} style={inputA} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         </>
       )}
 
@@ -3044,26 +3104,14 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                             </table>
                           </div>
                           <div>
-                            <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Kelas & mata pelajaran yang diampu — klik kelas untuk memilih & menampilkan mata pelajarannya (kosongkan kelas = boleh mengajar di semua kelas; kosongkan mapel = boleh mapel apa saja). Mata pelajaran mengikuti daftar Mata Pelajaran kelas itu di panel utama, dan dipakai untuk mengisi otomatis kolom mapel di tab "Jadwal" begitu guru ini dipilih di suatu sel.</div>
-                            <KetentuanKelasGroup
-                              label="Jadwal Putra"
-                              kelasArr={putraKelas}
+                            <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Kelas & mata pelajaran yang diampu — klik kelas untuk memilih & menampilkan mata pelajarannya tepat di bawah (kosongkan kelas = boleh mengajar di semua kelas; kosongkan mapel = boleh mapel apa saja). Mata pelajaran mengikuti daftar Mata Pelajaran kelas itu di panel utama, dan dipakai untuk mengisi otomatis kolom mapel di tab "Jadwal" begitu guru ini dipilih di suatu sel.</div>
+                            <KetentuanKelasEditor
+                              putraKelas={putraKelas}
+                              putriKelas={putriKelas}
                               kelasBoleh={JADWAL.ketentuan?.[g.kode]?.kelasBoleh || []}
                               mapelPerKelas={JADWAL.ketentuan?.[g.kode]?.mapelPerKelas || {}}
                               JADWAL={JADWAL}
                               CL={CL}
-                              clKeyOf={(kode) => JADWAL_PUTRA_CLKEY[kode]}
-                              onToggleKelas={(kode, checked) => setKelasBoleh(g.kode, kode, checked)}
-                              onToggleMapel={(kelasKode, mapelKode, checked) => toggleMapelPerKelas(g.kode, kelasKode, mapelKode, checked)}
-                            />
-                            <KetentuanKelasGroup
-                              label="Jadwal Putri"
-                              kelasArr={putriKelas}
-                              kelasBoleh={JADWAL.ketentuan?.[g.kode]?.kelasBoleh || []}
-                              mapelPerKelas={JADWAL.ketentuan?.[g.kode]?.mapelPerKelas || {}}
-                              JADWAL={JADWAL}
-                              CL={CL}
-                              clKeyOf={(kode) => kode}
                               onToggleKelas={(kode, checked) => setKelasBoleh(g.kode, kode, checked)}
                               onToggleMapel={(kelasKode, mapelKode, checked) => toggleMapelPerKelas(g.kode, kelasKode, mapelKode, checked)}
                             />
@@ -3364,7 +3412,7 @@ function LegerNilai({ kelas, grades, CL, ST, kep, SEM }) {
   );
 }
 
-function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM, readOnly = false }) {
+function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM, LEMBAGA = DEFAULT_LEMBAGA, readOnly = false }) {
   const sts = ST[kelas] || [];
   const cl = CL[kelas];
   const [lk, setLk] = useState({});
@@ -3392,6 +3440,12 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM, readOn
     setAllKep(nk);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
+  };
+  const doExportExcel = () => {
+    // lk mirrors allKep[kelas] (see the load effect above) plus any on-screen edits not
+    // yet saved — exporting it keeps the download consistent with what's shown.
+    const wb = buildKepribadianExcel(kelas, cl, sts, lk, SEM, LEMBAGA);
+    XLSX.writeFile(wb, `Kepribadian_Absensi_${cl.sh || kelas}_${SEM?.tipe === "ganjil" ? "Ganjil" : "Genap"}_${(SEM?.tahun || "").replace("/", "-")}.xlsx`);
   };
   const grSt = (g) => {
     if (g === "A") return { background: "#d1fae5", color: "#065f46" };
@@ -3471,18 +3525,66 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM, readOn
           </tbody>
         </table>
       </div>
-      <div style={{ padding: "10px 14px", background: "#f9fafb", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ padding: "10px 14px", background: "#f9fafb", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
         {readOnly ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#92400e", fontSize: "12px", fontWeight: 500, padding: "4px 10px", background: "#fef3c7", borderRadius: "20px" }}>🔒 Mode Arsip — Hanya Lihat</span>
         ) : (
-          <>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             {saved ? <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#065f46", fontSize: "12px", fontWeight: 500, padding: "4px 10px", background: "#d1fae5", borderRadius: "20px" }}>✓ Tersimpan</span> : <span />}
             <GreenBtn onClick={doSave}>💾 Simpan Data</GreenBtn>
-          </>
+          </div>
         )}
+        <button onClick={doExportExcel} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📥 Export Excel</button>
       </div>
     </div>
   );
+}
+
+// Standalone single-sheet export for the Kepribadian & Absensi panel — same sheet
+// buildExcelWorkbook produces as part of the full raport bundle, just downloadable on
+// its own from that panel instead of only via the "Cetak Raport" tab.
+function buildKepribadianExcel(kelas, cl, sts, kepData, SEM = DEFAULT_SEM, LEMBAGA = DEFAULT_LEMBAGA) {
+  const wb = XLSX.utils.book_new();
+  const isGanjil = SEM?.tipe === "ganjil";
+  const SCHOOL1 = `${LEMBAGA.namaLembaga} ${LEMBAGA.namaPondok}`;
+  const SCHOOL2 = LEMBAGA.lokasi;
+  const SCHOOL3 = `${LEMBAGA.alamat}  |  ${LEMBAGA.email}`;
+  const DEF_KEP = { ibadah: "B", kedisiplinan: "B", kesopanan: "B", tgjawab: "B", kepedulian: "B", kebersihan: "B", sakit: 0, izin: 0, alpa: 0, keputusan: "", catatan: "" };
+  const exProg = getKelasProgression(cl.name);
+  const kputLabel = (kep) => kep.keputusan === "naik" ? `Naik ke Kelas: ${exProg.next || "Jenjang Berikutnya"}` : kep.keputusan === "tidak_naik" ? `Tinggal di Kelas: ${exProg.current}` : "-";
+
+  const NC = 12;
+  const aoa = [
+    [SCHOOL1, ...Array(NC - 1).fill("")],
+    [SCHOOL2, ...Array(NC - 1).fill("")],
+    [SCHOOL3, ...Array(NC - 1).fill("")],
+    Array(NC).fill(""),
+    [`REKAPITULASI KEPRIBADIAN SANTRI & ABSENSI`, ...Array(NC - 1).fill("")],
+    [`Kelas: ${cl.name}`, "", `Wali Kelas: ${cl.wali || "-"}`, ...Array(NC - 3).fill("")],
+    Array(NC).fill(""),
+    ["No", "Nama Santri", "Ibadah", "Kedisiplinan", "Kesopanan", "Tg.Jawab", "Kepedulian", "Kebersihan", "Sakit", "Izin", "Alpha", isGanjil ? "Catatan Wali Kelas" : "Keputusan"],
+    ...sts.map((nm, si) => {
+      const k = { ...DEF_KEP, ...((kepData || {})[si] || {}) };
+      return [
+        si + 1, nm,
+        `${k.ibadah} - ${JENIS_LABEL[k.ibadah] || ""}`, `${k.kedisiplinan} - ${JENIS_LABEL[k.kedisiplinan] || ""}`,
+        `${k.kesopanan} - ${JENIS_LABEL[k.kesopanan] || ""}`, `${k.tgjawab} - ${JENIS_LABEL[k.tgjawab] || ""}`,
+        `${k.kepedulian} - ${JENIS_LABEL[k.kepedulian] || ""}`, `${k.kebersihan} - ${JENIS_LABEL[k.kebersihan] || ""}`,
+        k.sakit ?? 0, k.izin ?? 0, k.alpa ?? 0,
+        isGanjil ? (k.catatan || "-") : kputLabel(k),
+      ];
+    }),
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 4 }, { wch: 26 }, ...Array(6).fill({ wch: 14 }), { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 16 }];
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: NC - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: NC - 1 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: NC - 1 } },
+    { s: { r: 4, c: 0 }, e: { r: 4, c: NC - 1 } },
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, "Kepribadian & Absensi");
+  return wb;
 }
 
 function buildExcelWorkbook(kelas, cl, sts, grades, kepData, SEM = DEFAULT_SEM, LEMBAGA = DEFAULT_LEMBAGA) {
@@ -3772,7 +3874,7 @@ function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM, LEMBAGA }) {
         ))}
       </div>
       {tab === "leger" && <LegerNilai kelas={kelas} grades={allG[kelas] || {}} CL={CL} ST={ST} kep={allKep[kelas]} SEM={SEM} />}
-      {tab === "kepribadian" && <KepribadianView kelas={kelas} allKep={allKep} setAllKep={setAllKep} ST={ST} CL={CL} grades={allG[kelas] || {}} SEM={SEM} />}
+      {tab === "kepribadian" && <KepribadianView kelas={kelas} allKep={allKep} setAllKep={setAllKep} ST={ST} CL={CL} grades={allG[kelas] || {}} SEM={SEM} LEMBAGA={LEMBAGA} />}
       {tab === "raport" && <RaportTab kelas={kelas} cl={cl} sts={sts} grades={allG[kelas] || {}} kepData={allKep[kelas]} SEM={SEM} LEMBAGA={LEMBAGA} />}
     </div>
   );
@@ -3839,7 +3941,7 @@ function ArchiveView({ archives, LEMBAGA, onClose }) {
             ))}
           </div>
           {tab === "leger" && <LegerNilai kelas={selKelas} grades={arc.allG[selKelas] || {}} CL={arc.CL} ST={arc.ST} kep={arc.allKep[selKelas]} SEM={semObj} />}
-          {tab === "kepribadian" && <KepribadianView kelas={selKelas} allKep={arc.allKep} setAllKep={() => {}} ST={arc.ST} CL={arc.CL} grades={arc.allG[selKelas] || {}} SEM={semObj} readOnly />}
+          {tab === "kepribadian" && <KepribadianView kelas={selKelas} allKep={arc.allKep} setAllKep={() => {}} ST={arc.ST} CL={arc.CL} grades={arc.allG[selKelas] || {}} SEM={semObj} LEMBAGA={LEMBAGA} readOnly />}
           {tab === "raport" && <RaportTab kelas={selKelas} cl={cl} sts={sts} grades={arc.allG[selKelas] || {}} kepData={arc.allKep[selKelas]} SEM={semObj} LEMBAGA={LEMBAGA} />}
         </>
       )}
