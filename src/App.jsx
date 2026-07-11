@@ -754,12 +754,12 @@ function jadwalTableHTMLPutri(kelasList, grid, conflicts, colorOf, guruByKode, m
         <td class="c" rowspan="2">${jam.kode}</td>
         <td class="c" rowspan="2">${jam.waktu}</td>
         <td class="c" style="background:#f3f4f6">Mapel</td>
-        ${cellData.map((c) => `<td class="c" style="${c.style}" title="${c.title}">${c.mText}${c.conflict ? " ⚠" : ""}</td>`).join("")}
+        ${cellData.map((c) => `<td class="c" style="${c.style}" title="${c.title}"><b>${c.mText}</b>${c.conflict ? " ⚠" : ""}</td>`).join("")}
         ${piketCell}
       </tr>`);
       rowsHTML.push(`<tr>
         <td class="c" style="background:#f3f4f6">Guru</td>
-        ${cellData.map((c) => `<td class="c" style="${c.style}" title="${c.title}"><b>${c.gText}</b></td>`).join("")}
+        ${cellData.map((c) => `<td class="c" style="${c.style}" title="${c.title}">${c.gText}</td>`).join("")}
       </tr>`);
     });
   });
@@ -797,7 +797,18 @@ function buildJadwalHTML(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, p
   })));
   const guruRows = JADWAL.guru.filter((g) => usedGuruKodes.has(g.kode)).map((g) => `<tr><td class="c b" style="background:${colorOf(g.kode)}">${g.kode}</td><td>${g.nama}</td></tr>`).join("");
   const mapelRows = JADWAL.mapel.map((m) => `<tr><td class="c b">${m.kode}</td><td>${m.nama}</td></tr>`).join("");
-  const conflictNote = Object.keys(conflicts).length > 0 ? `<div class="sub" style="color:#dc2626;font-weight:bold">⚠ ${Object.keys(conflicts).length} sel bentrok terdeteksi — lihat sel bergaris merah</div>` : "";
+  // Counted per layer (not combined) so each page's note only claims the conflicts that
+  // actually appear on that page — a Putri-only clash shouldn't alarm the Putra page.
+  const conflictNote = (n) => n > 0 ? `<div class="sub" style="color:#dc2626;font-weight:bold">⚠ ${n} sel bentrok terdeteksi — lihat sel bergaris merah</div>` : "";
+  const putraConflictCount = Object.keys(conflicts).filter((k) => k.startsWith("putra|")).length;
+  const putriConflictCount = Object.keys(conflicts).filter((k) => k.startsWith("putri|")).length;
+
+  // Same kop (letterhead) repeated on both pages — Putra and Putri each print as their
+  // own standalone page (.wrap+.wrap forces the break) instead of sharing one page/kop.
+  const kop = `
+  <div class="ttl">JADWAL MATA PELAJARAN SEMESTER ${semTipeLabel.toUpperCase()}</div>
+  <div class="ttl">${(LEMBAGA.namaLembaga || "").toUpperCase()} ${LEMBAGA.namaPondok || ""}</div>
+  <div class="sub">TAHUN DIRASAH ${SEM?.tahun || ""}</div>`;
 
   return `<!DOCTYPE html><html lang=id><head><meta charset=UTF-8><title>Jadwal Pelajaran — ${LEMBAGA.namaSingkat}</title>
 <style>
@@ -805,6 +816,7 @@ function buildJadwalHTML(JADWAL, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM, p
 body{font-family:Arial,sans-serif;font-size:10px;background:#fff}
 @page{size:A4 landscape;margin:6mm}
 @media screen{.wrap{max-width:290mm;margin:10mm auto 20mm;padding:6mm;border:1px solid #ccc;background:white}}
+.wrap+.wrap{page-break-before:always}
 .ttl{text-align:center;font-weight:bold;font-size:14px}
 .sub{text-align:center;font-size:12px;margin-bottom:10px}
 .sect{font-weight:bold;font-size:12px;margin:10px 0 4px}
@@ -817,10 +829,8 @@ th{background:#e5e7eb;text-align:center}
 .row>table{width:auto;flex:1}
 </style></head><body>
 <div class="wrap">
-  <div class="ttl">JADWAL MATA PELAJARAN SEMESTER ${semTipeLabel.toUpperCase()}</div>
-  <div class="ttl">${(LEMBAGA.namaLembaga || "").toUpperCase()} ${LEMBAGA.namaPondok || ""}</div>
-  <div class="sub">TAHUN DIRASAH ${SEM?.tahun || ""}</div>
-  ${conflictNote}
+  ${kop}
+  ${conflictNote(putraConflictCount)}
 
   <div class="sect">JADWAL PUTRA</div>
   ${jadwalTableHTMLPutra(putraKelas, JADWAL.grid, conflicts, colorOf)}
@@ -829,6 +839,11 @@ th{background:#e5e7eb;text-align:center}
     <table><thead><tr><th colspan="2">KODE MAPEL</th></tr></thead><tbody>${mapelRows}</tbody></table>
     ${jadwalPiketTableHTML(JADWAL.piketPutra)}
   </div>
+</div>
+
+<div class="wrap">
+  ${kop}
+  ${conflictNote(putriConflictCount)}
 
   <div class="sect">JADWAL PUTRI</div>
   ${jadwalTableHTMLPutri(putriKelas, JADWAL.gridPutri, conflicts, colorOf, guruByKode, mapelByKode, JADWAL.piketPutri)}
