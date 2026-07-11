@@ -107,29 +107,31 @@ const JADWAL_JAM = [
   { kode: "II", waktu: "06.30 - 07.30" },
 ];
 // This is the "Jadwal Putra" table — Wustho already has its own Putra/Putri split
-// (PA/PI columns) since the source PDF combined them on one sheet. The Awwaliyah
-// Putri classes get a wholly separate table (see AdminJadwal's "Jadwal Putri"
-// section) whose columns are read live from CL — see jadwalPutriKelas().
+// since the source PDF combined them on one sheet: "WS I A"/"WS II A" are Wustho's own
+// Putra columns, "WS I B"/"WS II B" mirror the matching Wustho classes on the Jadwal
+// Putri table (see computeWustoPiMirror) — no more PA/PI suffixes. The Awwaliyah Putri
+// classes get a wholly separate table (see AdminJadwal's "Jadwal Putri" section) whose
+// columns are read live from CL — see jadwalPutriKelas().
 //
 // The kode below (awia, wsipa, ...) is the storage key for already-saved schedule
 // cells and intentionally stays fixed forever, independent of CL — renaming a kelas
 // in CL must never orphan existing Jadwal data. clKey points at the matching CL entry
 // so jadwalPutraKelas() below can pull the DISPLAYED label from CL (kept in sync by
-// name/abbreviation), falling back to these defaults if CL is missing that key.
-// WS I/II PI have no clKey: they mirror whichever Putri kelas is named "WS I/II Pi"
-// (see computeWustoPiMirror) and that table already shows its real CL-sourced name,
-// so a second static label here is enough.
+// name/abbreviation), falling back to these defaults if CL is missing that key. WS I/II
+// A and WS I/II B both derive from the SAME CL entry (ws1/ws2) — A and B are just the
+// Putra/Putri half of the same grade — so their base name always matches exactly.
 const JADWAL_PUTRA_STRUCT = [
   { kode: "awia", clKey: "aw1a", grup: "Awwaliyah", fallback: "AW I A" },
   { kode: "awib", clKey: "aw1b", grup: "Awwaliyah", fallback: "AW IB" },
   { kode: "awiia", clKey: "aw2a", grup: "Awwaliyah", fallback: "AW IIA" },
   { kode: "awiib", clKey: "aw2b", grup: "Awwaliyah", fallback: "AW IIB" },
   { kode: "awiiia", clKey: "aw3a", grup: "Awwaliyah", fallback: "AW IIIA" },
-  { kode: "wsipa", clKey: "ws1", grup: "Wustho", suffix: "PA", fallback: "WS I PA" },
-  { kode: "wsiipa", clKey: "ws2", grup: "Wustho", suffix: "PA", fallback: "WS II PA" },
-  { kode: "wsipi", clKey: null, grup: "Wustho", fallback: "WS I PI" },
-  { kode: "wsiipi", clKey: null, grup: "Wustho", fallback: "WS II PI" },
+  { kode: "wsipa", clKey: "ws1", grup: "Wustho", suffix: "A", fallback: "WS I A" },
+  { kode: "wsiipa", clKey: "ws2", grup: "Wustho", suffix: "A", fallback: "WS II A" },
+  { kode: "wsipi", clKey: "ws1", grup: "Wustho", suffix: "B", fallback: "WS I B" },
+  { kode: "wsiipi", clKey: "ws2", grup: "Wustho", suffix: "B", fallback: "WS II B" },
 ];
+const JADWAL_PUTRA_CLKEY = Object.fromEntries(JADWAL_PUTRA_STRUCT.map((s) => [s.kode, s.clKey]));
 function jadwalPutraKelas(CL) {
   return JADWAL_PUTRA_STRUCT.map(({ kode, clKey, grup, suffix, fallback }) => {
     const clLabel = clKey ? (CL?.[clKey]?.sh || CL?.[clKey]?.name) : null;
@@ -149,12 +151,22 @@ function jadwalGroups(kelasList) {
 }
 // The "Jadwal Putri" table's columns mirror the Dashboard's "Rekap Per Kelas" Putri
 // grouping exactly: any CL kelas whose key isn't one of the default KELAS_ORDER ones
-// (see sortedKelas below). Wustho Putri (ws*pi) intentionally also has fixed columns
-// in jadwalPutraKelas() above — the two tables aren't meant to be mutually exclusive.
+// (see sortedKelas below). The first two "Wustho"-grouped entries are shown as "WS I B"
+// / "WS II B" (matching Jadwal Putra's "WS I A" / "WS II A" base name) rather than
+// whatever their own CL Singkatan happens to be — they intentionally also have fixed
+// mirror columns in jadwalPutraKelas() above, so both tables must read identically.
 function jadwalPutriKelas(CL) {
-  return sortedKelas(CL)
+  const raw = sortedKelas(CL)
     .filter((k) => !KELAS_ORDER.includes(k))
     .map((k) => ({ kode: k, label: CL[k]?.sh || CL[k]?.name || k, grup: k.startsWith("ws") ? "Wustho" : "Awwaliyah" }));
+  const wustoBase = ["ws1", "ws2"];
+  let wi = 0;
+  return raw.map((k) => {
+    if (k.grup !== "Wustho" || wi >= wustoBase.length) return k;
+    const base = CL?.[wustoBase[wi]]?.sh || CL?.[wustoBase[wi]]?.name || (wi === 0 ? "WS I" : "WS II");
+    wi++;
+    return { ...k, label: `${base} B` };
+  });
 }
 const JADWAL_PALETTE = ["#fde68a", "#bbf7d0", "#bfdbfe", "#fbcfe8", "#ddd6fe", "#fed7aa", "#a7f3d0", "#fecaca", "#c7d2fe", "#fef08a", "#99f6e4", "#e9d5ff", "#fca5a5", "#bae6fd", "#d9f99d", "#f5d0fe", "#fdba74"];
 
@@ -300,19 +312,18 @@ function jadwalRenameMapelInKetentuan(ketentuan, oldKode, newKode) {
   });
   return next;
 }
-// WS I PI / WS II PI in Jadwal Putra are the same real classes as whichever Jadwal Putri
-// kelas is literally named "WS I Pi" / "WS II Pi" (matched by normalized label, not a
-// hardcoded CL kode, since that's admin-editable) — not two different classes that
-// happen to share a name. Matched dynamically here so both computeJadwalConflicts
-// (dedupe the "same guru, same real class" case) and AdminJadwal's mirrored writes
-// use one consistent source of truth.
-const jadwalNormLabel = (s) => (s || "").toLowerCase().replace(/\s+/g, "");
+// WS I B / WS II B in Jadwal Putra are the same real classes as the 1st/2nd
+// "Wustho"-grouped kelas on Jadwal Putri (matched positionally by group, not by label
+// text — labels are admin-editable and jadwalPutriKelas already overrides them to the
+// same "WS I/II B" text anyway) — not two different classes that happen to share a
+// name. Matched dynamically here so both computeJadwalConflicts (dedupe the "same
+// guru, same real class" case) and AdminJadwal's mirrored writes use one source of truth.
 function computeWustoPiMirror(putriKelas) {
   const putraToPutri = {};
   const putriToPutra = {};
-  ["wsipi", "wsiipi"].forEach((putraKode) => {
-    const putraLabel = JADWAL_PUTRA_STRUCT.find((k) => k.kode === putraKode)?.fallback;
-    const match = (putriKelas || []).find((k) => jadwalNormLabel(k.label) === jadwalNormLabel(putraLabel));
+  const putriWustho = (putriKelas || []).filter((k) => k.grup === "Wustho");
+  ["wsipi", "wsiipi"].forEach((putraKode, i) => {
+    const match = putriWustho[i];
     if (match) { putraToPutri[putraKode] = match.kode; putriToPutra[match.kode] = putraKode; }
   });
   return { putraToPutri, putriToPutra };
@@ -338,6 +349,30 @@ function reconcileWustoPi(grid, gridPutri, mirror) {
     });
   });
   return changed ? next : gridPutri;
+}
+
+// Jadwal's own mapel list (TAFSIR, FIQH, ...) uses different spelling/transliteration
+// than the grading system's per-kelas mata pelajaran names (e.g. CL says "Fiqih", not
+// "FIQH") — baseMapelName already strips the (Tulis)/(Lisan)/(Praktik) qualifiers CL
+// uses; comparing consonant skeletons on top of that catches the remaining spelling
+// drift (fiqh vs fiqih) without a hand-maintained alias table.
+function jadwalMapelNameMatches(jadwalNama, clNama) {
+  const norm = (s) => baseMapelName(s || "").toLowerCase();
+  const a = norm(jadwalNama), b = norm(clNama);
+  if (a === b) return true;
+  const consonants = (s) => s.replace(/[^a-z]/g, "").replace(/[aeiou]/g, "");
+  return consonants(a) === consonants(b);
+}
+// Which of Jadwal's own mapel apply to a given Jadwal kelas, based on that kelas's real
+// mata pelajaran list from the "Mata Pelajaran" admin tab (CL[clKey].mapel) — instead of
+// always offering all of Jadwal's mapel regardless of what's actually taught in that
+// kelas. Falls back to the full Jadwal mapel list if CL has no matching data, so the
+// picker is never left empty.
+function jadwalMapelForKelas(JADWAL, CL, clKey) {
+  const clMapel = clKey ? CL?.[clKey]?.mapel : null;
+  if (!clMapel || clMapel.length === 0) return JADWAL.mapel;
+  const filtered = JADWAL.mapel.filter((m) => clMapel.some((cm) => jadwalMapelNameMatches(m.nama, cm)));
+  return filtered.length > 0 ? filtered : JADWAL.mapel;
 }
 
 // Flags two kinds of scheduling clashes across every hari/jam/kelas cell, in BOTH the
@@ -2364,6 +2399,50 @@ function PiketEditor({ title, piket, onChange }) {
   );
 }
 
+// Kelas listed as a horizontal row of chips; checking one reveals its own mata
+// pelajaran picker as a vertical list underneath (stacked below the chip row, one
+// block per checked kelas) — mapel options come from that kelas's real "Mata
+// Pelajaran" list in CL (via clKeyOf), not Jadwal's full 16-entry mapel list.
+function KetentuanKelasGroup({ label, kelasArr, kelasBoleh, mapelPerKelas, JADWAL, CL, clKeyOf, onToggleKelas, onToggleMapel }) {
+  if (kelasArr.length === 0) return null;
+  return (
+    <div style={{ marginBottom: "10px" }}>
+      <div style={{ fontSize: "10px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", marginBottom: "4px" }}>{label}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+        {kelasArr.map((k) => {
+          const checked = kelasBoleh.includes(k.kode);
+          return (
+            <label key={k.kode} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", border: "1px solid " + (checked ? "#047857" : "#d1d5db"), background: checked ? "#ecfdf5" : "white", fontSize: "11px", cursor: "pointer" }}>
+              <input type="checkbox" checked={checked} onChange={(e) => onToggleKelas(k.kode, e.target.checked)} />
+              {k.label}
+            </label>
+          );
+        })}
+      </div>
+      {kelasArr.filter((k) => kelasBoleh.includes(k.kode)).map((k) => {
+        const mapelSel = mapelPerKelas[k.kode] || [];
+        const mapelOptions = jadwalMapelForKelas(JADWAL, CL, clKeyOf(k.kode));
+        return (
+          <div key={k.kode} style={{ marginBottom: "10px", paddingLeft: "8px", borderLeft: "2px solid #d1d5db" }}>
+            <div style={{ fontSize: "10px", fontWeight: 600, color: "#4b5563", marginBottom: "4px" }}>{k.label} — Mata Pelajaran</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              {mapelOptions.map((m) => {
+                const mchecked = mapelSel.includes(m.kode);
+                return (
+                  <label key={m.kode} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", cursor: "pointer" }}>
+                    <input type="checkbox" checked={mchecked} onChange={(e) => onToggleMapel(k.kode, m.kode, e.target.checked)} />
+                    {m.nama}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   const [tab, setTab] = useState("jadwal");
   const [newGuruKode, setNewGuruKode] = useState("");
@@ -2910,70 +2989,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                             <label style={labelA}>Nama Panggilan (dipakai di Jadwal Putri, kosongkan untuk pakai nama lengkap)</label>
                             <input type="text" value={g.alias || ""} onChange={(e) => updateGuruAlias(g.kode, e.target.value)} placeholder={g.nama} style={{ ...inputA, maxWidth: "320px" }} />
                           </div>
-                          <div style={{ marginBottom: "12px" }}>
-                            <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Kelas & mata pelajaran yang diampu (kosongkan kelas = boleh mengajar di semua kelas; kosongkan mapel = boleh mapel apa saja di kelas itu). Ini juga dipakai untuk mengisi otomatis kolom mapel di tab "Jadwal" begitu guru ini dipilih di suatu sel.</div>
-                            <div style={{ fontSize: "10px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", marginBottom: "4px" }}>Jadwal Putra</div>
-                            <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "8px" }}>
-                              {putraKelas.map((k) => {
-                                const checked = (JADWAL.ketentuan?.[g.kode]?.kelasBoleh || []).includes(k.kode);
-                                const mapelSel = JADWAL.ketentuan?.[g.kode]?.mapelPerKelas?.[k.kode] || [];
-                                return (
-                                  <div key={k.kode} style={{ display: "flex", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
-                                    <label style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", border: "1px solid " + (checked ? "#047857" : "#d1d5db"), background: checked ? "#ecfdf5" : "white", fontSize: "11px", cursor: "pointer", minWidth: "88px" }}>
-                                      <input type="checkbox" checked={checked} onChange={(e) => setKelasBoleh(g.kode, k.kode, e.target.checked)} />
-                                      {k.label}
-                                    </label>
-                                    {checked && (
-                                      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", alignItems: "center" }}>
-                                        {JADWAL.mapel.map((m) => {
-                                          const mchecked = mapelSel.includes(m.kode);
-                                          return (
-                                            <label key={m.kode} style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 6px", borderRadius: "5px", border: "1px solid " + (mchecked ? "#1e40af" : "#e5e7eb"), background: mchecked ? "#eff6ff" : "#fafafa", fontSize: "10px", cursor: "pointer" }}>
-                                              <input type="checkbox" checked={mchecked} onChange={(e) => toggleMapelPerKelas(g.kode, k.kode, m.kode, e.target.checked)} />
-                                              {m.nama}
-                                            </label>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            {putriKelas.length > 0 && (
-                              <>
-                                <div style={{ fontSize: "10px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", marginBottom: "4px" }}>Jadwal Putri</div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                  {putriKelas.map((k) => {
-                                    const checked = (JADWAL.ketentuan?.[g.kode]?.kelasBoleh || []).includes(k.kode);
-                                    const mapelSel = JADWAL.ketentuan?.[g.kode]?.mapelPerKelas?.[k.kode] || [];
-                                    return (
-                                      <div key={k.kode} style={{ display: "flex", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
-                                        <label style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", border: "1px solid " + (checked ? "#047857" : "#d1d5db"), background: checked ? "#ecfdf5" : "white", fontSize: "11px", cursor: "pointer", minWidth: "88px" }}>
-                                          <input type="checkbox" checked={checked} onChange={(e) => setKelasBoleh(g.kode, k.kode, e.target.checked)} />
-                                          {k.label}
-                                        </label>
-                                        {checked && (
-                                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", alignItems: "center" }}>
-                                            {JADWAL.mapel.map((m) => {
-                                              const mchecked = mapelSel.includes(m.kode);
-                                              return (
-                                                <label key={m.kode} style={{ display: "flex", alignItems: "center", gap: "3px", padding: "2px 6px", borderRadius: "5px", border: "1px solid " + (mchecked ? "#1e40af" : "#e5e7eb"), background: mchecked ? "#eff6ff" : "#fafafa", fontSize: "10px", cursor: "pointer" }}>
-                                                  <input type="checkbox" checked={mchecked} onChange={(e) => toggleMapelPerKelas(g.kode, k.kode, m.kode, e.target.checked)} />
-                                                  {m.nama}
-                                                </label>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                          <div>
+                          <div style={{ marginBottom: "14px" }}>
                             <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Ketersediaan hari & jam</div>
                             <table style={{ borderCollapse: "collapse", fontSize: "11px" }}>
                               <thead>
@@ -2998,6 +3014,31 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
                                 ))}
                               </tbody>
                             </table>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "6px" }}>Kelas & mata pelajaran yang diampu — klik kelas untuk memilih & menampilkan mata pelajarannya (kosongkan kelas = boleh mengajar di semua kelas; kosongkan mapel = boleh mapel apa saja). Mata pelajaran mengikuti daftar Mata Pelajaran kelas itu di panel utama, dan dipakai untuk mengisi otomatis kolom mapel di tab "Jadwal" begitu guru ini dipilih di suatu sel.</div>
+                            <KetentuanKelasGroup
+                              label="Jadwal Putra"
+                              kelasArr={putraKelas}
+                              kelasBoleh={JADWAL.ketentuan?.[g.kode]?.kelasBoleh || []}
+                              mapelPerKelas={JADWAL.ketentuan?.[g.kode]?.mapelPerKelas || {}}
+                              JADWAL={JADWAL}
+                              CL={CL}
+                              clKeyOf={(kode) => JADWAL_PUTRA_CLKEY[kode]}
+                              onToggleKelas={(kode, checked) => setKelasBoleh(g.kode, kode, checked)}
+                              onToggleMapel={(kelasKode, mapelKode, checked) => toggleMapelPerKelas(g.kode, kelasKode, mapelKode, checked)}
+                            />
+                            <KetentuanKelasGroup
+                              label="Jadwal Putri"
+                              kelasArr={putriKelas}
+                              kelasBoleh={JADWAL.ketentuan?.[g.kode]?.kelasBoleh || []}
+                              mapelPerKelas={JADWAL.ketentuan?.[g.kode]?.mapelPerKelas || {}}
+                              JADWAL={JADWAL}
+                              CL={CL}
+                              clKeyOf={(kode) => kode}
+                              onToggleKelas={(kode, checked) => setKelasBoleh(g.kode, kode, checked)}
+                              onToggleMapel={(kelasKode, mapelKode, checked) => toggleMapelPerKelas(g.kode, kelasKode, mapelKode, checked)}
+                            />
                           </div>
                         </td>
                       </tr>
