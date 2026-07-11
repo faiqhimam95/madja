@@ -1058,8 +1058,7 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA }) {
     <div style={{ minHeight: "100vh", background: "#064e3b", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px", fontFamily: "system-ui,-apple-system,sans-serif" }}>
       <div style={{ textAlign: "center", marginBottom: "20px", color: "white" }}>
         {LEMBAGA.logo ? <img src={LEMBAGA.logo} alt="Logo" style={{ width: "56px", height: "56px", objectFit: "contain", marginBottom: "6px" }} /> : <div style={{ fontSize: "44px", marginBottom: "6px" }}>🕌</div>}
-        <div style={{ fontSize: "20px", fontWeight: 500, marginBottom: "2px" }}>Sistem Nilai</div>
-        <div style={{ fontSize: "15px", fontWeight: 500, opacity: 0.9, marginBottom: "2px" }}>{LEMBAGA.namaSingkat}</div>
+        <div style={{ fontSize: "20px", fontWeight: 500, marginBottom: "2px" }}>{LEMBAGA.namaSingkat}</div>
         <div style={{ fontSize: "12px", opacity: 0.65 }}>Semester {semLabel(SEM)}</div>
       </div>
       <div style={{ background: "white", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "380px" }}>
