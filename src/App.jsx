@@ -4581,6 +4581,34 @@ export default function App() {
     }
   }, [accsReady]); // eslint-disable-line
 
+  // Same migration for the two Tata Usaha accounts — DEFAULT_ACCS only seeds a brand
+  // new, empty ACCS row, so existing deployments (which already have a real ACCS row
+  // in Supabase) never pick up tu_putra/tu_putri from the default just by shipping this
+  // feature. If tu_putra/tu_putri is missing, add it; if it exists but isn't role "tu"
+  // (e.g. someone already tried adding it by hand as an ordinary "guru" account via the
+  // Admin panel, which has no role:"tu" option and left it with no assignment — exactly
+  // this bug), fix it in place instead of creating a duplicate/conflicting username.
+  useEffect(() => {
+    if (!accsReady) return;
+    const fixes = [];
+    ["putra", "putri"].forEach((layer) => {
+      const u = `tu_${layer}`;
+      const existing = ACCS.find((a) => a.u === u);
+      if (!existing) fixes.push({ type: "add", u, layer });
+      else if (existing.role !== "tu") fixes.push({ type: "fix", u, layer });
+    });
+    if (fixes.length === 0) return;
+    setACCS((prev) => {
+      let next = prev;
+      fixes.forEach((fx) => {
+        next = fx.type === "add"
+          ? [...next, { u: fx.u, p: "tu123", role: "tu", name: `Tata Usaha ${fx.layer === "putra" ? "Putra" : "Putri"}`, layer: fx.layer }]
+          : next.map((a) => (a.u === fx.u ? { ...a, role: "tu", layer: fx.layer } : a));
+      });
+      return next;
+    });
+  }, [accsReady]); // eslint-disable-line
+
   // Reset back to Jadwal Pelajaran whenever the logged-in account changes (login/logout/
   // role switch), so the next person never inherits whatever tab the previous session left open.
   useEffect(() => { setStaffSection("jadwal"); }, [user?.username, user?.role]);
