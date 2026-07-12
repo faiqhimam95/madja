@@ -1268,6 +1268,29 @@ function Sidebar({ open, user, ACCS, setACCS, GM, setGM, setUser, CL, archives, 
   );
 }
 
+// Horizontal tab bar for the active group's items, rendered at the top of the content
+// panel — brings back the pre-sidebar tab-switching UX (per explicit user request) so
+// items within one group (e.g. Susun Jadwal's Jadwal/Guru & Mapel/Ketentuan Guru/Cetak
+// & Export) can be switched directly without returning to the sidebar. Only shown when
+// the group has 2+ items — a lone item has nothing to switch between.
+function GroupTabBar({ items, activeKey, onSelect }) {
+  if (!items || items.length < 2) return null;
+  return (
+    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+      {items.map((item) => {
+        const active = activeKey === item.key;
+        return (
+          <button key={item.key} onClick={() => onSelect(item.key)} style={{
+            padding: "8px 14px", borderRadius: "8px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer",
+            background: active ? "#064e3b" : "white", color: active ? "white" : "#4b5563",
+            border: active ? "none" : "1px solid #e5e7eb",
+          }}>{item.icon} {item.label}</button>
+        );
+      })}
+    </div>
+  );
+}
+
 // One flat key namespace per role. Each section is either a direct-navigate `"item"`
 // (single destination, no drill-down needed) or a `"group"` — a folder the Sidebar
 // shows as a single row at the top level; clicking it drills into that group's own
@@ -4998,6 +5021,7 @@ export default function App() {
   }
   const inJadwalSection = JADWAL_PELAJARAN_KEYS.includes(effNavKey);
   const isHome = effNavKey === homeNavKey(user);
+  const activeGroup = navSections.find((s) => s.type === "group" && s.key === effGroupKey) || null;
 
   return (
     <div style={{ minHeight: "100vh", fontFamily: "system-ui,-apple-system,sans-serif", background: "#f9fafb" }}>
@@ -5028,6 +5052,11 @@ export default function App() {
                   {!isHome && (
                     <div style={{ padding: "14px 16px 0", maxWidth: "1200px", margin: "0 auto" }}>
                       <button onClick={() => { setNavKey(homeNavKey(user)); setNavGroupKey(defaultNavGroupKey(user)); }} style={{ padding: "7px 14px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>← Kembali</button>
+                    </div>
+                  )}
+                  {activeGroup && (
+                    <div style={{ padding: isHome ? "14px 16px 0" : "10px 16px 0", maxWidth: "1200px", margin: "0 auto" }}>
+                      <GroupTabBar items={activeGroup.items} activeKey={effNavKey} onSelect={(k) => { setNavKey(k); setViewingArchive(false); }} />
                     </div>
                   )}
                   {(user.role === "admin" || user.role === "superadmin") && (
