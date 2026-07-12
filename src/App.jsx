@@ -2021,7 +2021,7 @@ function AdminWali({ ACCS, setACCS, CL, setCL, GM, setGM }) {
   );
 }
 
-function AdminSiswa({ CL, ST, setST }) {
+function AdminSiswa({ CL, ST, setST, setAllG, setAllKep }) {
   const ks = sortedKelas(CL);
   const [selK, setSelK] = useState(ks[0] || "");
   const [mode, setMode] = useState("replace");
@@ -2033,6 +2033,13 @@ function AdminSiswa({ CL, ST, setST }) {
     setST((p) => ({ ...p, [selK]: p[selK].filter((_, idx) => idx !== i) }));
   };
   const addStudent = () => setST((p) => ({ ...p, [selK]: [...(p[selK] || []), ""] }));
+  const deleteAllStudents = () => {
+    if (!sts.length) return;
+    if (!window.confirm(`Hapus SEMUA ${sts.length} siswa di kelas "${CL[selK]?.name}"? Nilai dan data kepribadian mereka di kelas ini akan ikut terhapus. Tindakan ini tidak bisa dibatalkan.`)) return;
+    setST((p) => ({ ...p, [selK]: [] }));
+    setAllG((p) => { const n = { ...p }; delete n[selK]; return n; });
+    setAllKep((p) => { const n = { ...p }; delete n[selK]; return n; });
+  };
 
   const onFile = async (e) => {
     const file = e.target.files[0];
@@ -2087,7 +2094,10 @@ function AdminSiswa({ CL, ST, setST }) {
       <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
         <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: "13px", fontWeight: 500 }}>{CL[selK]?.name} — {sts.length} siswa</span>
-          <GreenBtn onClick={addStudent} style={{ padding: "6px 12px", fontSize: "12px" }}>+ Tambah Siswa</GreenBtn>
+          <div style={{ display: "flex", gap: "8px" }}>
+            {sts.length > 0 && <RedBtn onClick={deleteAllStudents} style={{ padding: "6px 12px", fontSize: "12px" }}>🗑️ Hapus Semua Siswa</RedBtn>}
+            <GreenBtn onClick={addStudent} style={{ padding: "6px 12px", fontSize: "12px" }}>+ Tambah Siswa</GreenBtn>
+          </div>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <tbody>
@@ -3333,7 +3343,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
       {tab === "dashboard" && <AdminDashboard CL={CL} setCL={setCL} ST={ST} allG={allG} allKep={allKep} SEM={SEM} setSEM={setSEM} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} archives={archives} setArchives={setArchives} JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={isSuperAdmin} />}
       {tab === "kelas" && <AdminKelas CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} />}
       {tab === "wali" && <AdminWali ACCS={ACCS} setACCS={setACCS} CL={CL} setCL={setCL} GM={GM} setGM={setGM} />}
-      {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} />}
+      {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} setAllG={setAllG} setAllKep={setAllKep} />}
       {tab === "mapel" && <AdminMapel CL={CL} setCL={setCL} setGM={setGM} />}
       {tab === "guru" && <AdminPenugasan ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} CL={CL} setCL={setCL} />}
       {tab === "kehadiran" && <AdminKehadiranGuru JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} LEMBAGA={LEMBAGA} SEM={SEM} />}
