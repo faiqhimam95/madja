@@ -66,6 +66,8 @@ const DEFAULT_ACCS = [
   {u:"guru_hadits",p:"guru123",role:"guru",name:"Guru Hadits"},
   {u:"guru_aswaja",p:"guru123",role:"guru",name:"Guru Aswaja"},
   {u:"guru_ilal",p:"guru123",role:"guru",name:"Guru I'lal"},
+  {u:"tu_putra",p:"tu123",role:"tu",name:"Tata Usaha Putra",layer:"putra"},
+  {u:"tu_putri",p:"tu123",role:"tu",name:"Tata Usaha Putri",layer:"putri"},
 ];
 
 const DEFAULT_SEM = { tipe: "genap", tahun: "2025/2026" };
@@ -1027,6 +1029,7 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA }) {
       usr.kelas = pickedKelas || list[0];
     }
     if (role === "guru") usr.asgn = GM[a.u] || [];
+    if (role === "tu") usr.layer = a.layer;
     onLogin(usr);
   };
 
@@ -1044,6 +1047,7 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA }) {
     if (!a) { setErr("Username atau password salah"); return; }
     setErr("");
     if (a.role === "admin" || a.role === "superadmin") { finalizeLogin(a, a.role); return; }
+    if (a.role === "tu") { finalizeLogin(a, "tu"); return; }
     if (isWaliAcc(a)) { goWali(a); return; }
     if (isGuruAcc(a, GM)) { finalizeLogin(a, "guru"); return; }
     setErr("Akun ini belum memiliki penugasan (wali kelas atau mata pelajaran). Hubungi admin.");
@@ -1113,8 +1117,8 @@ function DemoSec({ title, accounts, onSel }) {
 }
 
 function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LEMBAGA, archives, onOpenArchive, staffSection, onToggleStaffSection }) {
-  const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309" };
-  const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel" };
+  const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309", tu: "#0d9488" };
+  const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel", tu: "Tata Usaha" };
   const [showAcct, setShowAcct] = useState(false);
   const [showSwitch, setShowSwitch] = useState(false);
   const [form, setForm] = useState({ u: "", p: "" });
@@ -1179,7 +1183,7 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LE
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</div>
             <div style={{ display: "inline-block", background: rl[user.role], padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 500, marginTop: "2px" }}>
-              {rn[user.role]}{user.role === "wk" && user.kelas ? " — " + CL[user.kelas]?.sh : ""}
+              {rn[user.role]}{user.role === "wk" && user.kelas ? " — " + CL[user.kelas]?.sh : ""}{user.role === "tu" ? " — " + (user.layer === "putra" ? "Putra" : "Putri") : ""}
             </div>
           </div>
           {canSwitch && (
@@ -1380,7 +1384,7 @@ function AdminLembaga({ LEMBAGA, setLEMBAGA }) {
   );
 }
 
-function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, setSEM, GM, setGM, ACCS, setACCS, archives, setArchives, isSuperAdmin }) {
+function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, setSEM, GM, setGM, ACCS, setACCS, archives, setArchives, kehadiranGuru, setKehadiranGuru, isSuperAdmin }) {
   const ks = sortedKelas(CL);
   const tot = ks.reduce((s, k) => s + (ST[k] || []).length, 0);
   const group1 = ks.filter((k) => KELAS_ORDER.includes(k));
@@ -1404,7 +1408,8 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
       `PERINGATAN — TINDAKAN TIDAK BISA DIBATALKAN\n\n` +
       `Semester "${semLabel(SEM)}" akan diarsipkan (bisa dilihat lagi lewat tombol 🗄️ Arsip, tapi tidak bisa diubah).\n\n` +
       `Mengaktifkan semester "${newLabel}" akan MENGOSONGKAN dari data aktif:\n` +
-      `• Semua nilai & Kepribadian/Absensi di semua kelas\n\n` +
+      `• Semua nilai & Kepribadian/Absensi di semua kelas\n` +
+      `• Semua rekap kehadiran guru\n\n` +
       `Akun Wali Kelas & Guru Mapel beserta penugasannya TETAP ada (login tidak hilang), tapi dikunci sementara — Admin perlu mengkonfirmasi ulang tiap akun (tab Penugasan Guru) sebelum akun itu bisa input data lagi.\n\n` +
       `Kelas, mata pelajaran, KKM, daftar siswa, dan Susun Jadwal TETAP ada seperti semula.\n\n` +
       `Lanjutkan?`
@@ -1413,11 +1418,12 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
     const archiveKey = `${SEM.tipe}-${(SEM.tahun || "").replace(/\D+/g, "-")}-${Date.now()}`;
     setArchives((prev) => ({
       ...prev,
-      [archiveKey]: { tipe: SEM.tipe, tahun: SEM.tahun, archivedAt: new Date().toISOString(), CL, ST, GM, ACCS, allG, allKep },
+      [archiveKey]: { tipe: SEM.tipe, tahun: SEM.tahun, archivedAt: new Date().toISOString(), CL, ST, GM, ACCS, allG, allKep, kehadiranGuru },
     }));
     setSEM({ tipe: semForm.tipe, tahun });
     setAllG({});
     setAllKep({});
+    setKehadiranGuru({});
     // Accounts & penugasan (GM) stay intact across the reset — only re-locked, not
     // deleted, so a guru/wali can log in right after but can't input until Admin
     // re-confirms them for the new semester (see AdminPenugasan's confirm toggle).
@@ -2095,7 +2101,7 @@ function AdminMapel({ CL, setCL, setGM }) {
 
 function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
   const ks = sortedKelas(CL);
-  const staffList = ACCS.filter((a) => a.role !== "admin");
+  const staffList = ACCS.filter((a) => a.role !== "admin" && a.role !== "tu");
   const [view, setView] = useState("list"); // "list" | "detail"
   const [selGuru, setSelGuru] = useState(null);
   const guru = staffList.find((a) => a.u === selGuru);
@@ -3190,7 +3196,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   );
 }
 
-function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, archives, setArchives, LEMBAGA, setLEMBAGA, JADWAL, setJADWAL, isSuperAdmin }) {
+function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, archives, setArchives, LEMBAGA, setLEMBAGA, JADWAL, setJADWAL, kehadiranGuru, setKehadiranGuru, isSuperAdmin }) {
   const [tab, setTab] = useState("dashboard");
   const tabs = [
     ["dashboard", "📊 Dashboard"],
@@ -3199,6 +3205,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
     ["siswa", "🧑‍🎓 Data Siswa"],
     ["mapel", "📚 Mata Pelajaran"],
     ["guru", "🧑‍🏫 Penugasan Guru"],
+    ["kehadiran", "✅ Rekap Kehadiran"],
     ...(isSuperAdmin ? [["jadwal", "🗓️ Susun Jadwal"], ["identitas", "🏛️ Identitas Lembaga"]] : []),
   ];
   return (
@@ -3209,12 +3216,13 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
           <button key={k} onClick={() => setTab(k)} style={{ flex: "1 1 auto", padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
         ))}
       </div>
-      {tab === "dashboard" && <AdminDashboard CL={CL} setCL={setCL} ST={ST} allG={allG} allKep={allKep} SEM={SEM} setSEM={setSEM} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} archives={archives} setArchives={setArchives} isSuperAdmin={isSuperAdmin} />}
+      {tab === "dashboard" && <AdminDashboard CL={CL} setCL={setCL} ST={ST} allG={allG} allKep={allKep} SEM={SEM} setSEM={setSEM} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} archives={archives} setArchives={setArchives} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={isSuperAdmin} />}
       {tab === "kelas" && <AdminKelas CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} />}
       {tab === "wali" && <AdminWali ACCS={ACCS} setACCS={setACCS} CL={CL} setCL={setCL} GM={GM} setGM={setGM} />}
       {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} />}
       {tab === "mapel" && <AdminMapel CL={CL} setCL={setCL} setGM={setGM} />}
       {tab === "guru" && <AdminPenugasan ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} CL={CL} setCL={setCL} />}
+      {tab === "kehadiran" && <AdminKehadiranGuru JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} LEMBAGA={LEMBAGA} SEM={SEM} />}
       {tab === "jadwal" && isSuperAdmin && <AdminJadwal JADWAL={JADWAL} setJADWAL={setJADWAL} LEMBAGA={LEMBAGA} SEM={SEM} ACCS={ACCS} GM={GM} CL={CL} />}
       {tab === "identitas" && isSuperAdmin && <AdminLembaga LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} />}
     </div>
@@ -4139,6 +4147,215 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM }) {
   );
 }
 
+// ── Kehadiran Guru (Tata Usaha) ─────────────────────────────────────────────
+// Real calendar day drives which JADWAL_HARI grid shows — this schedule's week has
+// no JUMAT (Friday is a holiday for this pondok), so getDay()===5 intentionally has
+// no mapping and the view shows a "libur" message that day instead of a grid.
+const JS_DAY_TO_HARI = { 0: "AHAD", 1: "SENIN", 2: "SELASA", 3: "RABU", 4: "KAMIS", 6: "SABTU" };
+const HARI_LABEL_ID = { SABTU: "Sabtu", AHAD: "Ahad", SENIN: "Senin", SELASA: "Selasa", RABU: "Rabu", KAMIS: "Kamis" };
+const BULAN_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+const KEHADIRAN_STATUS = [
+  { kode: "H", label: "Hadir", bg: "#d1fae5", fg: "#065f46" },
+  { kode: "S", label: "Sakit", bg: "#fef3c7", fg: "#92400e" },
+  { kode: "I", label: "Izin", bg: "#dbeafe", fg: "#1e40af" },
+  { kode: "A", label: "Alpa", bg: "#fee2e2", fg: "#991b1b" },
+];
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function formatTanggalIndo(isoStr) {
+  const [y, m, d] = isoStr.split("-").map(Number);
+  return `${d} ${BULAN_ID[m - 1]} ${y}`;
+}
+
+// Tata Usaha Putra/Putri: fills in guru attendance for TODAY only (per the confirmed
+// scope — no backfill/future dates, to avoid mis-dated entries), one layer (their own
+// Putra or Putri jadwal). Writes go straight to kehadiranGuru on each click — this is
+// a same-day factual log, not a draft that needs review before committing, so it skips
+// the local-draft+Simpan pattern used for grade entry elsewhere in the app. The guru
+// kode is captured into the record itself (not just the kelas/jam slot) so a later
+// schedule change never retroactively changes who an old attendance mark belongs to.
+function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, locked }) {
+  const layer = user.layer;
+  const hari = JS_DAY_TO_HARI[new Date().getDay()] || null;
+  const iso = todayISO();
+  const putraKelas = useMemo(() => jadwalPutraKelas(JADWAL), [JADWAL.kelasPutra]); // eslint-disable-line
+  const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}, JADWAL), [CL, JADWAL.kelasPutriNama, JADWAL.kelasPutra]); // eslint-disable-line
+  const kelasList = layer === "putra" ? putraKelas : putriKelas;
+  const grid = layer === "putra" ? JADWAL.grid : JADWAL.gridPutri;
+  const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
+  const mapelByKode = useMemo(() => Object.fromEntries((JADWAL.mapel || []).map((m) => [m.kode, m])), [JADWAL.mapel]);
+
+  const setStatus = (jamKode, kelasKode, guruKode, status) => {
+    if (locked) return;
+    setKehadiranGuru((prev) => {
+      const day = prev[iso] || {};
+      const layerData = day[layer] || {};
+      const jamData = layerData[jamKode] || {};
+      const existing = jamData[kelasKode];
+      const next = existing?.status === status ? undefined : { g: guruKode, status };
+      return { ...prev, [iso]: { ...day, [layer]: { ...layerData, [jamKode]: { ...jamData, [kelasKode]: next } } } };
+    });
+  };
+  const getStatus = (jamKode, kelasKode) => kehadiranGuru?.[iso]?.[layer]?.[jamKode]?.[kelasKode]?.status || "";
+
+  return (
+    <div style={{ padding: "16px", maxWidth: "1100px", margin: "0 auto" }}>
+      <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px" }}>
+        <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>✅ Kehadiran Guru — Jadwal {layer === "putra" ? "Putra" : "Putri"}</h2>
+        <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>{hari ? `${HARI_LABEL_ID[hari]}, ${formatTanggalIndo(iso)}` : formatTanggalIndo(iso)}</p>
+      </div>
+      {locked && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", fontSize: "12px", color: "#92400e" }}>
+          ⏳ Akun Anda belum dikonfirmasi Admin untuk semester ini — kehadiran bisa dilihat tapi belum bisa diisi/diubah.
+        </div>
+      )}
+      {!hari ? (
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
+          Hari ini Jumat — tidak ada jadwal pelajaran, tidak perlu mengisi kehadiran guru.
+        </div>
+      ) : kelasList.length === 0 ? (
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kelas {layer === "putra" ? "Putra" : "Putri"} di Susun Jadwal.</div>
+      ) : (
+        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+              <thead>
+                <tr style={{ background: "#f9fafb" }}>
+                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>Jam</th>
+                  {kelasList.map((k) => <th key={k.kode} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{k.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {JADWAL_JAM.map((jam) => (
+                  <tr key={jam.kode} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <td style={{ padding: "8px 10px", fontWeight: 500, verticalAlign: "top" }}>{jam.kode}<br /><span style={{ color: "#9ca3af", fontWeight: 400 }}>{jam.waktu}</span></td>
+                    {kelasList.map((k) => {
+                      const cell = grid?.[hari]?.[jam.kode]?.[k.kode];
+                      const g = cell?.g ? (guruByKode[cell.g]?.nama || cell.g) : null;
+                      const m = cell?.m ? (mapelByKode[cell.m]?.nama || cell.m) : null;
+                      if (!g) return <td key={k.kode} style={{ padding: "8px", color: "#d1d5db", textAlign: "center" }}>-</td>;
+                      const status = getStatus(jam.kode, k.kode);
+                      return (
+                        <td key={k.kode} style={{ padding: "6px 8px", minWidth: "130px" }}>
+                          <div style={{ fontSize: "11px", fontWeight: 500, color: "#111827" }}>{g}</div>
+                          <div style={{ fontSize: "10px", color: "#9ca3af", marginBottom: "6px" }}>{m}</div>
+                          <div style={{ display: "flex", gap: "3px" }}>
+                            {KEHADIRAN_STATUS.map((s) => (
+                              <button key={s.kode} disabled={locked} onClick={() => setStatus(jam.kode, k.kode, cell.g, s.kode)}
+                                title={s.label}
+                                style={{ flex: 1, padding: "4px 0", fontSize: "10px", fontWeight: 600, border: "none", borderRadius: "5px", cursor: locked ? "not-allowed" : "pointer", background: status === s.kode ? s.bg : "#f3f4f6", color: status === s.kode ? s.fg : "#9ca3af" }}>
+                                {s.kode}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Aggregates every recorded attendance mark by guru kode (using the g captured inside
+// each record, not the live schedule — so a later reassignment never rewrites history).
+function buildKehadiranRecap(kehadiranGuru) {
+  const counts = {};
+  Object.values(kehadiranGuru || {}).forEach((day) => {
+    ["putra", "putri"].forEach((layer) => {
+      Object.values(day?.[layer] || {}).forEach((jamData) => {
+        Object.values(jamData || {}).forEach((rec) => {
+          if (!rec?.g || !rec?.status) return;
+          counts[rec.g] = counts[rec.g] || { H: 0, S: 0, I: 0, A: 0 };
+          counts[rec.g][rec.status] = (counts[rec.g][rec.status] || 0) + 1;
+        });
+      });
+    });
+  });
+  return counts;
+}
+
+function buildKehadiranGuruExcel(JADWAL, kehadiranGuru, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM) {
+  const counts = buildKehadiranRecap(kehadiranGuru);
+  const rows = (JADWAL.guru || []).filter((g) => counts[g.kode]).map((g) => {
+    const c = counts[g.kode] || { H: 0, S: 0, I: 0, A: 0 };
+    return [g.kode, g.nama, c.H, c.S, c.I, c.A, c.H + c.S + c.I + c.A];
+  });
+  const wb = XLSX.utils.book_new();
+  const NC = 7;
+  const aoa = [
+    [`${LEMBAGA.namaLembaga} ${LEMBAGA.namaPondok}`, ...Array(NC - 1).fill("")],
+    [`REKAPITULASI KEHADIRAN GURU — Semester ${semLabel(SEM)}`, ...Array(NC - 1).fill("")],
+    Array(NC).fill(""),
+    ["Kode", "Nama Guru", "Hadir", "Sakit", "Izin", "Alpa", "Total Tercatat"],
+    ...rows,
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 14 }];
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: NC - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: NC - 1 } }];
+  XLSX.utils.book_append_sheet(wb, ws, "Kehadiran Guru");
+  return wb;
+}
+
+function AdminKehadiranGuru({ JADWAL, kehadiranGuru, LEMBAGA, SEM }) {
+  const counts = useMemo(() => buildKehadiranRecap(kehadiranGuru), [kehadiranGuru]);
+  const rows = (JADWAL.guru || []).map((g) => ({ ...g, c: counts[g.kode] || { H: 0, S: 0, I: 0, A: 0 } }));
+  const totalTercatat = Object.values(counts).reduce((s, c) => s + c.H + c.S + c.I + c.A, 0);
+
+  const doExport = () => {
+    const wb = buildKehadiranGuruExcel(JADWAL, kehadiranGuru, LEMBAGA, SEM);
+    XLSX.writeFile(wb, `Kehadiran_Guru_${semLabel(SEM).replace(" ", "_").replace("/", "-")}.xlsx`);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", gap: "8px", flexWrap: "wrap" }}>
+        <p style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}>Rekap kehadiran guru semester berjalan, diisi Tata Usaha Putra/Putri tiap hari lewat menu Jadwal Pelajaran → Kehadiran Guru mereka sendiri. Direset bersamaan dengan reset semester.</p>
+        <button onClick={doExport} style={{ padding: "8px 16px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>📥 Export Excel</button>
+      </div>
+      {totalTercatat === 0 ? (
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kehadiran guru yang tercatat semester ini.</div>
+      ) : (
+        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb" }}>
+                {["Kode", "Nama Guru", "Hadir", "Sakit", "Izin", "Alpa", "Total"].map((h) => (
+                  <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((g) => {
+                const total = g.c.H + g.c.S + g.c.I + g.c.A;
+                if (total === 0) return null;
+                return (
+                  <tr key={g.kode} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <td style={{ padding: "8px 12px", fontWeight: 600 }}>{g.kode}</td>
+                    <td style={{ padding: "8px 12px" }}>{g.nama}</td>
+                    <td style={{ padding: "8px 12px", color: "#065f46" }}>{g.c.H}</td>
+                    <td style={{ padding: "8px 12px", color: "#92400e" }}>{g.c.S}</td>
+                    <td style={{ padding: "8px 12px", color: "#1e40af" }}>{g.c.I}</td>
+                    <td style={{ padding: "8px 12px", color: "#991b1b" }}>{g.c.A}</td>
+                    <td style={{ padding: "8px 12px", fontWeight: 500 }}>{total}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ArchiveView({ archives, LEMBAGA, onClose }) {
   const archiveKeys = Object.keys(archives).sort((a, b) => (archives[b].archivedAt || "").localeCompare(archives[a].archivedAt || ""));
   const [selArchive, setSelArchive] = useState(archiveKeys[0] || "");
@@ -4351,6 +4568,7 @@ export default function App() {
   const [LEMBAGA, setLEMBAGA, lembagaReady] = useRemoteState("LEMBAGA", DEFAULT_LEMBAGA);
   const [JADWAL, setJADWAL, jadwalReady] = useRemoteState("JADWAL", DEFAULT_JADWAL);
   const [archives, setArchives, archivesReady] = useRemoteState("archives", {});
+  const [kehadiranGuru, setKehadiranGuru, kehadiranGuruReady] = useRemoteState("kehadiranGuru", {});
   const [viewingArchive, setViewingArchive] = useState(false);
   const [staffSection, setStaffSection] = useState("jadwal"); // "rapor" | "jadwal" — Wali Kelas/Guru Mapel switcher
 
@@ -4367,7 +4585,7 @@ export default function App() {
   // role switch), so the next person never inherits whatever tab the previous session left open.
   useEffect(() => { setStaffSection("jadwal"); }, [user?.username, user?.role]);
 
-  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady)) {
+  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady && kehadiranGuruReady)) {
     return <LoadingScreen />;
   }
 
@@ -4384,11 +4602,12 @@ export default function App() {
             ) : (
               <>
                 {(user.role === "admin" || user.role === "superadmin") && (
-                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} isSuperAdmin={user.role === "superadmin"} />
+                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={user.role === "superadmin"} />
                 )}
                 {user.role === "guru" && staffSection === "rapor" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
                 {user.role === "wk" && staffSection === "rapor" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
                 {(user.role === "guru" || user.role === "wk") && staffSection === "jadwal" && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} />}
+                {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
               </>
             )}
           </div>
