@@ -1116,11 +1116,14 @@ function DemoSec({ title, accounts, onSel }) {
   );
 }
 
-function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LEMBAGA, archives, onOpenArchive, staffSection, onToggleStaffSection }) {
+// Replaces the old top Header bar entirely — every navigational choice (section tabs
+// across every role, Arsip, Akun, role/kelas switch, Keluar) now lives here instead,
+// per explicit user request. `open` toggles between the full panel and a slim rail
+// with just the reopen button, so it can be hidden/shown without losing its place.
+function Sidebar({ open, onToggleOpen, user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, LEMBAGA, archives, onOpenArchive, navGroups, activeKey, onSelect }) {
   const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309", tu: "#0d9488" };
   const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel", tu: "Tata Usaha" };
   const [showAcct, setShowAcct] = useState(false);
-  const [showSwitch, setShowSwitch] = useState(false);
   const [form, setForm] = useState({ u: "", p: "" });
   const [acctSaved, setAcctSaved] = useState(false);
 
@@ -1128,26 +1131,13 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LE
   const waliKelasAll = acc ? kelasList(acc) : [];
   const hasWali = waliKelasAll.length > 0;
   const hasGuru = acc ? isGuruAcc(acc, GM) : false;
-  // quick-switch only makes sense if this account has more than one "hat" to wear:
-  // both wali kelas + guru mapel, or wali kelas of more than one kelas
-  const canSwitch = user.role !== "admin" && user.role !== "superadmin" && (hasWali && hasGuru || (user.role === "wk" && waliKelasAll.length > 1));
+  const canSwitchRole = user.role !== "admin" && user.role !== "superadmin" && hasWali && hasGuru;
+  const canSwitchKelas = user.role === "wk" && waliKelasAll.length > 1;
 
-  const switchToWali = (kelas) => {
-    setUser((prev) => ({ ...prev, role: "wk", kelasAll: waliKelasAll, kelas }));
-    setShowSwitch(false);
-  };
-  const switchToGuru = () => {
-    setUser((prev) => ({ ...prev, role: "guru", asgn: GM[user.username] || [] }));
-    setShowSwitch(false);
-  };
+  const switchToWali = (kelas) => setUser((prev) => ({ ...prev, role: "wk", kelasAll: waliKelasAll, kelas }));
+  const switchToGuru = () => setUser((prev) => ({ ...prev, role: "guru", asgn: GM[user.username] || [] }));
 
-  const openAcct = () => {
-    setForm({ u: user.username, p: acc?.p || "" });
-    setShowAcct(true);
-    setShowSwitch(false);
-    setAcctSaved(false);
-  };
-
+  const openAcct = () => { setForm({ u: user.username, p: acc?.p || "" }); setShowAcct(true); setAcctSaved(false); };
   const saveAcct = () => {
     const newU = form.u.trim();
     const newP = form.p.trim();
@@ -1162,89 +1152,163 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LE
     setTimeout(() => { setAcctSaved(false); setShowAcct(false); }, 1500);
   };
 
+  const navBtnStyle = (active) => ({ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", borderRadius: "7px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", marginBottom: "2px", background: active ? "rgba(255,255,255,0.18)" : "transparent", color: "white" });
+
+  if (!open) {
+    return (
+      <div style={{ width: "44px", flexShrink: 0, background: "#064e3b", display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 0", minHeight: "100vh" }}>
+        <button onClick={onToggleOpen} title="Tampilkan menu" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: "8px", padding: "8px 10px", cursor: "pointer", fontSize: "15px" }}>☰</button>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ position: "relative", flexShrink: 0 }}>
-      <div style={{ background: "#064e3b", color: "white", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {LEMBAGA.logo && <img src={LEMBAGA.logo} alt="Logo" style={{ width: "26px", height: "26px", objectFit: "contain" }} />}
-          <div>
-            <div style={{ fontSize: "14px", fontWeight: 500 }}>{LEMBAGA.logo ? "" : "🕌 "}{LEMBAGA.namaSingkat}</div>
-          </div>
+    <div style={{ width: "250px", flexShrink: 0, background: "#064e3b", color: "white", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+          {LEMBAGA.logo && <img src={LEMBAGA.logo} alt="Logo" style={{ width: "24px", height: "24px", objectFit: "contain", flexShrink: 0 }} />}
+          <span style={{ fontSize: "13px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{LEMBAGA.logo ? "" : "🕌 "}{LEMBAGA.namaSingkat}</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {archives && Object.keys(archives).length > 0 && (
-            <button onClick={onOpenArchive} title="Lihat data semester lalu (hanya lihat)" style={{ padding: "5px 10px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>🗄️ Arsip</button>
-          )}
-          {(user.role === "guru" || user.role === "wk") && (
-            <button onClick={onToggleStaffSection} title="Beralih antara Jadwal Pelajaran dan Rapor" style={{ padding: "5px 10px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>
-              {staffSection === "rapor" ? "🗓️ Jadwal Pelajaran" : "📋 Rapor"}
-            </button>
-          )}
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</div>
-            <div style={{ display: "inline-block", background: rl[user.role], padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 500, marginTop: "2px" }}>
-              {rn[user.role]}{user.role === "wk" && user.kelas ? " — " + CL[user.kelas]?.sh : ""}{user.role === "tu" ? " — " + (user.layer === "putra" ? "Putra" : "Putri") : ""}
-            </div>
-          </div>
-          {canSwitch && (
-            <button onClick={() => { setShowSwitch((s) => !s); setShowAcct(false); }} title="Beralih peran / kelas" style={{ padding: "5px 10px", background: showSwitch ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>🔀 Beralih</button>
-          )}
-          <button onClick={openAcct} title="Edit username & password saya" style={{ padding: "5px 10px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>⚙️ Akun</button>
-          <button onClick={onLogout} style={{ padding: "5px 12px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>Keluar</button>
+        <button onClick={onToggleOpen} title="Sembunyikan menu" style={{ background: "transparent", border: "none", color: "white", cursor: "pointer", fontSize: "14px", opacity: 0.7, flexShrink: 0 }}>✕</button>
+      </div>
+
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+        <div style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</div>
+        <div style={{ display: "inline-block", background: rl[user.role], padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 500, marginTop: "4px" }}>
+          {rn[user.role]}{user.role === "wk" && user.kelas ? " — " + CL[user.kelas]?.sh : ""}{user.role === "tu" ? " — " + (user.layer === "putra" ? "Putra" : "Putri") : ""}
         </div>
       </div>
 
-      {showSwitch && (
-        <div style={{ position: "absolute", top: "100%", right: "16px", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", width: "240px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", zIndex: 100 }}>
-          <div style={{ fontSize: "13px", fontWeight: 500, color: "#111827", marginBottom: "10px" }}>🔀 Beralih Tampilan</div>
-          {hasWali && hasGuru && (
-            <div style={{ marginBottom: waliKelasAll.length > 1 && user.role === "wk" ? "12px" : "0" }}>
-              <div style={{ fontSize: "10px", fontWeight: 500, color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Peran</div>
-              <select
-                value={user.role}
-                onChange={(e) => (e.target.value === "wk" ? switchToWali(user.role === "wk" ? user.kelas : waliKelasAll[0]) : switchToGuru())}
-                style={{ width: "100%", padding: "7px 8px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", fontWeight: 500, color: "#374151", background: "white" }}
-              >
+      {(canSwitchRole || canSwitchKelas) && (
+        <div style={{ padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+          {canSwitchRole && (
+            <div style={{ marginBottom: canSwitchKelas ? "8px" : 0 }}>
+              <div style={{ fontSize: "9px", fontWeight: 600, opacity: 0.6, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>Peran</div>
+              <select value={user.role} onChange={(e) => (e.target.value === "wk" ? switchToWali(user.role === "wk" ? user.kelas : waliKelasAll[0]) : switchToGuru())}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "none", fontSize: "11px", fontWeight: 500 }}>
                 <option value="wk">👤 Wali Kelas</option>
                 <option value="guru">🧑‍🏫 Guru Mapel</option>
               </select>
             </div>
           )}
-          {user.role === "wk" && waliKelasAll.length > 1 && (
+          {canSwitchKelas && (
             <div>
-              <div style={{ fontSize: "10px", fontWeight: 500, color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Kelas</div>
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {waliKelasAll.map((k) => CL[k] && (
-                  <button key={k} onClick={() => switchToWali(k)} style={{ padding: "7px 12px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: k === user.kelas ? "#064e3b" : "#e5e7eb", color: k === user.kelas ? "white" : "#374151" }}>
-                    {CL[k].sh || k}
-                  </button>
-                ))}
-              </div>
+              <div style={{ fontSize: "9px", fontWeight: 600, opacity: 0.6, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>Kelas</div>
+              <select value={user.kelas} onChange={(e) => switchToWali(e.target.value)} style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "none", fontSize: "11px", fontWeight: 500 }}>
+                {waliKelasAll.map((k) => CL[k] && <option key={k} value={k}>{CL[k].sh || k}</option>)}
+              </select>
             </div>
           )}
         </div>
       )}
 
-      {showAcct && (
-        <div style={{ position: "absolute", top: "100%", right: "16px", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", width: "280px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", zIndex: 100 }}>
-          <div style={{ fontSize: "13px", fontWeight: 500, color: "#111827", marginBottom: "12px" }}>⚙️ Edit Akun Saya</div>
-          <div style={{ marginBottom: "8px" }}>
-            <label style={labelA}>Username</label>
-            <input type="text" value={form.u} onChange={(e) => setForm((f) => ({ ...f, u: e.target.value }))} style={inputA} />
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px" }}>
+        {navGroups.map((g, gi) => (
+          <div key={gi} style={{ marginBottom: "14px" }}>
+            {g.title && <div style={{ fontSize: "9px", fontWeight: 700, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.6px", padding: "0 8px", marginBottom: "5px" }}>{g.title}</div>}
+            {g.items.map((item) => (
+              <button key={item.key} onClick={() => onSelect(item.key)} style={navBtnStyle(activeKey === item.key)}>{item.icon} {item.label}</button>
+            ))}
           </div>
-          <div style={{ marginBottom: "12px" }}>
-            <label style={labelA}>Password</label>
-            <input type="text" value={form.p} onChange={(e) => setForm((f) => ({ ...f, p: e.target.value }))} style={inputA} />
+        ))}
+      </div>
+
+      <div style={{ padding: "10px", borderTop: "1px solid rgba(255,255,255,0.12)", position: "relative" }}>
+        {archives && Object.keys(archives).length > 0 && (
+          <button onClick={onOpenArchive} style={navBtnStyle(false)}>🗄️ Arsip</button>
+        )}
+        <button onClick={openAcct} style={navBtnStyle(false)}>⚙️ Akun</button>
+        <button onClick={onLogout} style={navBtnStyle(false)}>🚪 Keluar</button>
+
+        {showAcct && (
+          <div style={{ position: "absolute", bottom: "100%", left: "10px", right: "10px", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", boxShadow: "0 4px 20px rgba(0,0,0,0.25)", marginBottom: "8px", zIndex: 100 }}>
+            <div style={{ fontSize: "13px", fontWeight: 500, color: "#111827", marginBottom: "12px" }}>⚙️ Edit Akun Saya</div>
+            <div style={{ marginBottom: "8px" }}>
+              <label style={labelA}>Username</label>
+              <input type="text" value={form.u} onChange={(e) => setForm((f) => ({ ...f, u: e.target.value }))} style={inputA} />
+            </div>
+            <div style={{ marginBottom: "12px" }}>
+              <label style={labelA}>Password</label>
+              <input type="text" value={form.p} onChange={(e) => setForm((f) => ({ ...f, p: e.target.value }))} style={inputA} />
+            </div>
+            {acctSaved && <p style={{ color: "#065f46", fontSize: "12px", margin: "0 0 8px", textAlign: "center", fontWeight: 500 }}>✓ Tersimpan</p>}
+            <div style={{ display: "flex", gap: "6px" }}>
+              <GreenBtn onClick={saveAcct} style={{ flex: 1, padding: "8px", fontSize: "13px" }}>💾 Simpan</GreenBtn>
+              <button onClick={() => setShowAcct(false)} style={{ padding: "8px 12px", background: "#f3f4f6", color: "#4b5563", border: "none", borderRadius: "8px", fontSize: "13px", cursor: "pointer" }}>Batal</button>
+            </div>
           </div>
-          {acctSaved && <p style={{ color: "#065f46", fontSize: "12px", margin: "0 0 8px", textAlign: "center", fontWeight: 500 }}>✓ Tersimpan</p>}
-          <div style={{ display: "flex", gap: "6px" }}>
-            <GreenBtn onClick={saveAcct} style={{ flex: 1, padding: "8px", fontSize: "13px" }}>💾 Simpan</GreenBtn>
-            <button onClick={() => setShowAcct(false)} style={{ padding: "8px 12px", background: "#f3f4f6", color: "#4b5563", border: "none", borderRadius: "8px", fontSize: "13px", cursor: "pointer" }}>Batal</button>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
+}
+
+// One flat key namespace per role — Admin's own "Susun Jadwal" sub-tabs are flattened
+// into individual top-level sidebar entries (jadwal-grid/jadwal-master/jadwal-ketentuan/
+// jadwal-cetak) rather than nested, matching the rest of the sidebar's one-level list.
+// Wali Kelas gets both a "Rapor" group (its own 3 tabs) and a "Jadwal Pelajaran" group
+// (GuruJadwalView's 5 tabs); pure Guru Mapel gets a single "Input Nilai UAS" Rapor entry
+// plus the same Jadwal Pelajaran group — JADWAL_PELAJARAN_KEYS below is how the render
+// layer tells which of the two "islands" a given key belongs to.
+const JADWAL_PELAJARAN_KEYS = ["pribadi", "hari", "kelas", "semua", "rekap"];
+function buildNavGroups(user, isSuperAdmin) {
+  if (!user) return [];
+  if (user.role === "admin" || user.role === "superadmin") {
+    return [{
+      title: null,
+      items: [
+        { key: "dashboard", label: "Dashboard", icon: "📊" },
+        { key: "kelas", label: "Kelas", icon: "🏫" },
+        { key: "wali", label: "Wali Kelas", icon: "👤" },
+        { key: "siswa", label: "Data Siswa", icon: "🧑‍🎓" },
+        { key: "mapel", label: "Mata Pelajaran", icon: "📚" },
+        { key: "guru", label: "Penugasan Guru", icon: "🧑‍🏫" },
+        { key: "kehadiran", label: "Rekap Kehadiran", icon: "✅" },
+        ...(isSuperAdmin ? [
+          { key: "jadwal-grid", label: "Jadwal", icon: "🗓️" },
+          { key: "jadwal-master", label: "Guru & Mapel", icon: "🧑‍🏫" },
+          { key: "jadwal-ketentuan", label: "Ketentuan Guru", icon: "📋" },
+          { key: "jadwal-cetak", label: "Cetak & Export", icon: "🖨️" },
+          { key: "identitas", label: "Identitas Lembaga", icon: "🏛️" },
+        ] : []),
+      ],
+    }];
+  }
+  if (user.role === "wk") {
+    return [
+      { title: "Rapor", items: [
+        { key: "leger", label: "Leger Nilai", icon: "📋" },
+        { key: "kepribadian", label: "Kepribadian & Absensi", icon: "⭐" },
+        { key: "raport", label: "Cetak Raport", icon: "🖨️" },
+      ] },
+      { title: "Jadwal Pelajaran", items: [
+        { key: "pribadi", label: "Jadwal Pribadi", icon: "👤" },
+        { key: "hari", label: "Per Hari", icon: "📅" },
+        { key: "kelas", label: "Per Kelas", icon: "🏫" },
+        { key: "semua", label: "Semua Jadwal", icon: "🗓️" },
+        { key: "rekap", label: "Rekap Saya", icon: "📊" },
+      ] },
+    ];
+  }
+  if (user.role === "guru") {
+    return [
+      { title: "Rapor", items: [{ key: "nilai", label: "Input Nilai UAS", icon: "📝" }] },
+      { title: "Jadwal Pelajaran", items: [
+        { key: "pribadi", label: "Jadwal Pribadi", icon: "👤" },
+        { key: "hari", label: "Per Hari", icon: "📅" },
+        { key: "kelas", label: "Per Kelas", icon: "🏫" },
+        { key: "semua", label: "Semua Jadwal", icon: "🗓️" },
+        { key: "rekap", label: "Rekap Saya", icon: "📊" },
+      ] },
+    ];
+  }
+  if (user.role === "tu") {
+    return [{ title: "Kehadiran Guru", items: [
+      { key: "isi", label: "Isi Kehadiran", icon: "✏️" },
+      { key: "rekap", label: "Rekap", icon: "📊" },
+    ] }];
+  }
+  return [];
 }
 
 function SC({ icon, label, val, onClick, hint }) {
@@ -2528,8 +2592,7 @@ function KetentuanKelasEditor({ putraKelas, putriKelas, kelasBoleh, mapelPerKela
   );
 }
 
-function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
-  const [tab, setTab] = useState("jadwal");
+function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
   const [newGuruKode, setNewGuruKode] = useState("");
   const [newGuruNama, setNewGuruNama] = useState("");
   const [newMapelKode, setNewMapelKode] = useState("");
@@ -2837,13 +2900,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px", flexWrap: "wrap" }}>
-        {[["jadwal", "🗓️ Jadwal"], ["master", "🧑‍🏫 Guru & Mapel"], ["ketentuan", "📋 Ketentuan Guru"], ["cetak", "🖨️ Cetak & Export"]].map(([k, lbl]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ flex: "1 1 auto", padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#92400e" : "#6b7280" }}>{lbl}</button>
-        ))}
-      </div>
-
-      {tab === "jadwal" && (
+      {tab === "jadwal-grid" && (
         <>
           <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Isi kode guru & kode mapel di tiap sel. Tambah/ubah daftar guru dan mata pelajaran di tab "Guru & Mapel", atur ketentuan di tab "Ketentuan Guru". Perubahan di sini bersifat sementara sampai diklik "Simpan".</p>
           {conflictCount > 0 ? (
@@ -2993,7 +3050,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
         </>
       )}
 
-      {tab === "master" && (
+      {tab === "jadwal-master" && (
         <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
           <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
@@ -3103,7 +3160,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
         </>
       )}
 
-      {tab === "ketentuan" && (
+      {tab === "jadwal-ketentuan" && (
         <>
           <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Daftar guru berikut sama dengan daftar di tab "Guru & Mapel". Atur kelas yang boleh diampu dan hari/jam ketersediaan tiap guru — dipakai untuk mendeteksi bentrok jadwal otomatis di tab "Jadwal".</p>
           <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
@@ -3184,7 +3241,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
         </>
       )}
 
-      {tab === "cetak" && (
+      {tab === "jadwal-cetak" && (
         <div>
           <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "20px", textAlign: "center", marginBottom: "14px" }}>
             <p style={{ fontSize: "13px", color: "#4b5563", marginTop: 0 }}>Cetak jadwal pelajaran (A4 landscape) atau unduh sebagai file Excel. Jadwal Putra memakai kode guru/mapel dengan legenda + guru piket sejajar legenda; Jadwal Putri memakai nama lengkap (tanpa legenda) dengan guru piket di sampingnya. Pratinjau persis tampilan cetak ada di bawah.</p>
@@ -3203,26 +3260,10 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL }) {
   );
 }
 
-function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, archives, setArchives, LEMBAGA, setLEMBAGA, JADWAL, setJADWAL, kehadiranGuru, setKehadiranGuru, isSuperAdmin }) {
-  const [tab, setTab] = useState("dashboard");
-  const tabs = [
-    ["dashboard", "📊 Dashboard"],
-    ["kelas", "🏫 Kelas"],
-    ["wali", "👤 Wali Kelas"],
-    ["siswa", "🧑‍🎓 Data Siswa"],
-    ["mapel", "📚 Mata Pelajaran"],
-    ["guru", "🧑‍🏫 Penugasan Guru"],
-    ["kehadiran", "✅ Rekap Kehadiran"],
-    ...(isSuperAdmin ? [["jadwal", "🗓️ Susun Jadwal"], ["identitas", "🏛️ Identitas Lembaga"]] : []),
-  ];
+function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, archives, setArchives, LEMBAGA, setLEMBAGA, JADWAL, setJADWAL, kehadiranGuru, setKehadiranGuru, isSuperAdmin, tab }) {
   return (
     <div style={{ padding: "16px", maxWidth: "1100px", margin: "0 auto" }}>
       <h2 style={{ fontSize: "17px", fontWeight: 500, color: "#111827", marginBottom: "12px" }}>Panel Admin</h2>
-      <div style={{ display: "flex", gap: "4px", marginBottom: "16px", background: "#f3f4f6", borderRadius: "10px", padding: "4px", flexWrap: "wrap" }}>
-        {tabs.map(([k, lbl]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ flex: "1 1 auto", padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
-        ))}
-      </div>
       {tab === "dashboard" && <AdminDashboard CL={CL} setCL={setCL} ST={ST} allG={allG} allKep={allKep} SEM={SEM} setSEM={setSEM} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} archives={archives} setArchives={setArchives} JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={isSuperAdmin} />}
       {tab === "kelas" && <AdminKelas CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} />}
       {tab === "wali" && <AdminWali ACCS={ACCS} setACCS={setACCS} CL={CL} setCL={setCL} GM={GM} setGM={setGM} />}
@@ -3230,7 +3271,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
       {tab === "mapel" && <AdminMapel CL={CL} setCL={setCL} setGM={setGM} />}
       {tab === "guru" && <AdminPenugasan ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} CL={CL} setCL={setCL} />}
       {tab === "kehadiran" && <AdminKehadiranGuru JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} LEMBAGA={LEMBAGA} SEM={SEM} />}
-      {tab === "jadwal" && isSuperAdmin && <AdminJadwal JADWAL={JADWAL} setJADWAL={setJADWAL} LEMBAGA={LEMBAGA} SEM={SEM} ACCS={ACCS} GM={GM} CL={CL} />}
+      {tab.startsWith("jadwal-") && isSuperAdmin && <AdminJadwal JADWAL={JADWAL} setJADWAL={setJADWAL} LEMBAGA={LEMBAGA} SEM={SEM} ACCS={ACCS} GM={GM} CL={CL} tab={tab} />}
       {tab === "identitas" && isSuperAdmin && <AdminLembaga LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} />}
     </div>
   );
@@ -3909,15 +3950,14 @@ function RaportTab({ kelas, cl, sts, grades, kepData, SEM, LEMBAGA }) {
   );
 }
 
-function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM, LEMBAGA, locked = false }) {
-  const [tab, setTab] = useState("leger");
+function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM, LEMBAGA, locked = false, tab, setTab }) {
   const kelasAll = (user.kelasAll && user.kelasAll.length > 0) ? user.kelasAll : [user.kelas].filter(Boolean);
   const activeKelas = user.kelas || kelasAll[0];
   const kelas = CL[activeKelas] ? activeKelas : (kelasAll.find((k) => CL[k]) || kelasAll[0]);
   const cl = CL[kelas];
   const sts = ST[kelas] || [];
-  // Kelas aktif dipilih lewat quick-switcher "🔀 Beralih" di header; reset ke tab Leger tiap kali berganti kelas.
-  useEffect(() => { setTab("leger"); }, [kelas]);
+  // Kelas aktif dipilih lewat selector kelas di Sidebar; reset ke tab Leger tiap kali berganti kelas.
+  useEffect(() => { setTab("leger"); }, [kelas]); // eslint-disable-line
   if (!cl) return null;
   return (
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
@@ -3930,11 +3970,6 @@ function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM, LEMBAGA, locked = 
           <div>Santri: <strong>{sts.length}</strong></div>
           <div>Mapel: <strong>{cl.mapel.length}</strong></div>
         </div>
-      </div>
-      <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px" }}>
-        {[["leger", "📋 Leger Nilai"], ["kepribadian", "⭐ Kepribadian & Absensi"], ["raport", "🖨️ Cetak Raport"]].map(([k, lbl]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
-        ))}
       </div>
       {locked && (
         <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", fontSize: "12px", color: "#92400e" }}>
@@ -4109,8 +4144,7 @@ function JadwalPerKelasTab({ kelasKode, setKelasKode, putraKelas, putriKelas, JA
   );
 }
 
-function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru }) {
-  const [tab, setTab] = useState("pribadi");
+function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, tab }) {
   const putraKelas = useMemo(() => jadwalPutraKelas(JADWAL), [JADWAL.kelasPutra]); // eslint-disable-line
   const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}, JADWAL), [CL, JADWAL.kelasPutriNama, JADWAL.kelasPutra]); // eslint-disable-line
   const wustoPiMirror = useMemo(() => computeWustoPiMirror(putriKelas), [putriKelas]);
@@ -4129,18 +4163,11 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru }) {
     [JADWAL, LEMBAGA, SEM, putriKelas, putraKelas]
   );
 
-  const tabs = [["pribadi", "👤 Jadwal Pribadi"], ["hari", "📅 Per Hari"], ["kelas", "🏫 Per Kelas"], ["semua", "🗓️ Semua Jadwal"], ["rekap", "📊 Rekap Saya"]];
-
   return (
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
       <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px" }}>
         <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>🗓️ Jadwal Pelajaran</h2>
         <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>{user.name} — Semester {semLabel(SEM)}</p>
-      </div>
-      <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px", flexWrap: "wrap" }}>
-        {tabs.map(([k, lbl]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ flex: "1 1 auto", padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
-        ))}
       </div>
       {tab === "pribadi" && <JadwalPribadiTab myGuru={myGuru} rows={pribadiRows} />}
       {tab === "hari" && <JadwalPerHariTab hari={hari} setHari={setHari} putraKelas={putraKelas} putriKelas={putriKelas} JADWAL={JADWAL} guruByKode={guruByKode} mapelByKode={mapelByKode} />}
@@ -4359,8 +4386,7 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
 // to a "Hadir" mark (a guru who came late is still "hadir"), while "Izin" carries an
 // optional free-text reason instead. Listed as a flat one-row-per-slot list (rather
 // than kelas-as-columns) so it scrolls vertically instead of sideways through 9+ kelas.
-function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, locked }) {
-  const [tab, setTab] = useState("isi");
+function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, locked, tab }) {
   const layer = user.layer;
   const iso = todayISO();
   const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
@@ -4397,11 +4423,6 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, lo
       <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px" }}>
         <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>✅ Kehadiran Guru — Jadwal {layer === "putra" ? "Putra" : "Putri"}</h2>
         <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>{hari ? `${HARI_LABEL_ID[hari]}, ${formatTanggalIndo(iso)}` : formatTanggalIndo(iso)}</p>
-      </div>
-      <div style={{ display: "flex", gap: "4px", marginBottom: "14px", background: "#f3f4f6", borderRadius: "10px", padding: "4px", maxWidth: "320px" }}>
-        {[["isi", "✏️ Isi Kehadiran"], ["rekap", "📊 Rekap"]].map(([k, lbl]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "7px 10px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: tab === k ? "white" : "transparent", color: tab === k ? "#065f46" : "#6b7280" }}>{lbl}</button>
-        ))}
       </div>
 
       {tab === "rekap" ? (
@@ -4829,7 +4850,8 @@ export default function App() {
   const [archives, setArchives, archivesReady] = useRemoteState("archives", {});
   const [kehadiranGuru, setKehadiranGuru, kehadiranGuruReady] = useRemoteState("kehadiranGuru", {});
   const [viewingArchive, setViewingArchive] = useState(false);
-  const [staffSection, setStaffSection] = useState("jadwal"); // "rapor" | "jadwal" — Wali Kelas/Guru Mapel switcher
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [navKey, setNavKey] = useState(""); // active Sidebar item; namespace differs per role, see buildNavGroups
 
   // One-time self-healing migration: make sure a Super Admin account always exists,
   // even on deployments whose ACCS data predates this role.
@@ -4868,37 +4890,49 @@ export default function App() {
     });
   }, [accsReady]); // eslint-disable-line
 
-  // Reset back to Jadwal Pelajaran whenever the logged-in account changes (login/logout/
-  // role switch), so the next person never inherits whatever tab the previous session left open.
-  useEffect(() => { setStaffSection("jadwal"); }, [user?.username, user?.role]);
+  // Keep navKey valid for whoever's currently logged in: falls back to that role's
+  // first Sidebar item whenever it's missing (fresh login) or no longer applies (e.g.
+  // switching from Wali Kelas, whose Rapor group has "leger", to Guru Mapel, whose
+  // Rapor group only has "nilai" — "leger" would otherwise point at nothing).
+  useEffect(() => {
+    const validKeys = buildNavGroups(user, user?.role === "superadmin").flatMap((g) => g.items.map((i) => i.key));
+    if (!validKeys.includes(navKey)) setNavKey(validKeys[0] || "");
+  }, [user?.username, user?.role]); // eslint-disable-line
 
   if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady && kehadiranGuruReady)) {
     return <LoadingScreen />;
   }
 
+  const inJadwalSection = JADWAL_PELAJARAN_KEYS.includes(navKey);
+
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "system-ui,-apple-system,sans-serif", background: "#f9fafb" }}>
+    <div style={{ minHeight: "100vh", fontFamily: "system-ui,-apple-system,sans-serif", background: "#f9fafb" }}>
       {!user ? (
         <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} SEM={SEM} LEMBAGA={LEMBAGA} />
       ) : (
-        <>
-          <Header user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser} SEM={SEM} LEMBAGA={LEMBAGA} archives={archives} onOpenArchive={() => setViewingArchive(true)} staffSection={staffSection} onToggleStaffSection={() => setStaffSection((s) => (s === "rapor" ? "jadwal" : "rapor"))} />
-          <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ display: "flex", minHeight: "100vh" }}>
+          <Sidebar
+            open={sidebarOpen} onToggleOpen={() => setSidebarOpen((s) => !s)}
+            user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser}
+            LEMBAGA={LEMBAGA} archives={archives} onOpenArchive={() => setViewingArchive(true)}
+            navGroups={buildNavGroups(user, user.role === "superadmin")} activeKey={navKey} onSelect={(k) => { setNavKey(k); setViewingArchive(false); }}
+          />
+          <div style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
             {viewingArchive ? (
               <ArchiveView archives={archives} LEMBAGA={LEMBAGA} onClose={() => setViewingArchive(false)} />
             ) : (
               <>
                 {(user.role === "admin" || user.role === "superadmin") && (
-                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={user.role === "superadmin"} />
+                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={user.role === "superadmin"} tab={navKey} />
                 )}
-                {user.role === "guru" && staffSection === "rapor" && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
-                {user.role === "wk" && staffSection === "rapor" && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
-                {(user.role === "guru" || user.role === "wk") && staffSection === "jadwal" && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} />}
-                {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
+                {user.role === "guru" && !inJadwalSection && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
+                {user.role === "wk" && !inJadwalSection && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={navKey} setTab={setNavKey} />}
+                {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} tab={navKey} />}
+                {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={navKey} />}
               </>
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
