@@ -1,0 +1,9 @@
+{
+  "appId": "com.mdtja.sistemnilai",
+  "appName": "Sistem Nilai MDT",
+  "webDir": "dist",
+  "server": {
+    "url": "https://madja.vercel.app",
+    "androidScheme": "https"
+  }
+}

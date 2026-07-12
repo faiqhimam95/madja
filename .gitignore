@@ -3,3 +3,14 @@ dist
 .vercel
 .env
 .env.local
+
+# Android native project (Capacitor) — the project itself is committed, but
+# build outputs, Gradle caches, and google-services.json are regenerable
+# (see notifikasi_guru_tu_push memory for the `firebase apps:sdkconfig` command)
+# and shouldn't sit in git even though none of them are secret.
+android/app/build/
+android/build/
+android/.gradle/
+android/app/google-services.json
+android/local.properties
+resources/
