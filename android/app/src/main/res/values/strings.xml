@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Sistem Nilai MDT</string>
-    <string name="title_activity_main">Sistem Nilai MDT</string>
+    <string name="app_name">MADJA</string>
+    <string name="title_activity_main">MADJA</string>
     <string name="package_name">com.mdtja.sistemnilai</string>
     <string name="custom_url_scheme">com.mdtja.sistemnilai</string>
 </resources>

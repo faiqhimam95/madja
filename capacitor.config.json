@@ -1,6 +1,6 @@
 {
   "appId": "com.mdtja.sistemnilai",
-  "appName": "Sistem Nilai MDT",
+  "appName": "MADJA",
   "webDir": "dist",
   "server": {
     "url": "https://madja.vercel.app",
