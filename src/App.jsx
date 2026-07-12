@@ -1196,10 +1196,14 @@ function Header({ user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, SEM, LE
           {hasWali && hasGuru && (
             <div style={{ marginBottom: waliKelasAll.length > 1 && user.role === "wk" ? "12px" : "0" }}>
               <div style={{ fontSize: "10px", fontWeight: 500, color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Peran</div>
-              <div style={{ display: "flex", gap: "6px" }}>
-                <button onClick={() => switchToWali(user.role === "wk" ? user.kelas : waliKelasAll[0])} style={{ flex: 1, padding: "7px 8px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: user.role === "wk" ? "#064e3b" : "#e5e7eb", color: user.role === "wk" ? "white" : "#374151" }}>👤 Wali Kelas</button>
-                <button onClick={switchToGuru} style={{ flex: 1, padding: "7px 8px", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: user.role === "guru" ? "#064e3b" : "#e5e7eb", color: user.role === "guru" ? "white" : "#374151" }}>🧑‍🏫 Guru Mapel</button>
-              </div>
+              <select
+                value={user.role}
+                onChange={(e) => (e.target.value === "wk" ? switchToWali(user.role === "wk" ? user.kelas : waliKelasAll[0]) : switchToGuru())}
+                style={{ width: "100%", padding: "7px 8px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", fontWeight: 500, color: "#374151", background: "white" }}
+              >
+                <option value="wk">👤 Wali Kelas</option>
+                <option value="guru">🧑‍🏫 Guru Mapel</option>
+              </select>
             </div>
           )}
           {user.role === "wk" && waliKelasAll.length > 1 && (
