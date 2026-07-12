@@ -1120,7 +1120,33 @@ function DemoSec({ title, accounts, onSel }) {
 // across every role, Arsip, Akun, role/kelas switch, Keluar) now lives here instead,
 // per explicit user request. `open` toggles between the full panel and a slim rail
 // with just the reopen button, so it can be hidden/shown without losing its place.
-function Sidebar({ open, onToggleOpen, user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, LEMBAGA, archives, onOpenArchive, navSections, groupKey, onEnterGroup, onBack, activeKey, onSelect }) {
+// Slim, always-visible, sticky top bar — the only thing permanently on screen regardless
+// of Sidebar state: branding + the Sidebar show/hide toggle on the left, account owner +
+// Keluar on the right. Deliberately minimal (no nav, no Akun/Arsip) per explicit request;
+// everything else lives in the collapsible Sidebar below it.
+function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout }) {
+  return (
+    <div style={{ position: "sticky", top: 0, zIndex: 60, background: "#064e3b", color: "white", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+        <button onClick={onToggleSidebar} title={sidebarOpen ? "Sembunyikan menu" : "Tampilkan menu"} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "14px", flexShrink: 0 }}>{sidebarOpen ? "✕" : "☰"}</button>
+        {LEMBAGA.logo && <img src={LEMBAGA.logo} alt="Logo" style={{ width: "24px", height: "24px", objectFit: "contain", flexShrink: 0 }} />}
+        <span style={{ fontSize: "14px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{LEMBAGA.logo ? "" : "🕌 "}{LEMBAGA.namaSingkat}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+        <span style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</span>
+        <button onClick={onLogout} style={{ padding: "6px 12px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>Keluar</button>
+      </div>
+    </div>
+  );
+}
+
+// Renders nothing at all when closed (per explicit request — no leftover collapsed rail,
+// content goes truly full-width; reopening happens from Header's ☰ toggle instead).
+// Group selection ("pengelompokan") is a single <select> rather than a click-to-drill
+// folder — picking a group swaps which group's items show below it and immediately
+// navigates to that group's first item. Standalone items (not part of any group) still
+// render as plain buttons above the dropdown.
+function Sidebar({ open, user, ACCS, setACCS, GM, setGM, setUser, CL, archives, onOpenArchive, navSections, groupKey, onSelectGroup, activeKey, onSelect }) {
   const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309", tu: "#0d9488" };
   const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel", tu: "Tata Usaha" };
   const [showAcct, setShowAcct] = useState(false);
@@ -1152,29 +1178,17 @@ function Sidebar({ open, onToggleOpen, user, onLogout, CL, ACCS, setACCS, GM, se
     setTimeout(() => { setAcctSaved(false); setShowAcct(false); }, 1500);
   };
 
-  const navBtnStyle = (active) => ({ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", borderRadius: "7px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", marginBottom: "2px", background: active ? "rgba(255,255,255,0.18)" : "transparent", color: "white" });
+  if (!open) return null;
 
-  if (!open) {
-    return (
-      <div style={{ width: "44px", flexShrink: 0, background: "#064e3b", display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 0", minHeight: "100vh" }}>
-        <button onClick={onToggleOpen} title="Tampilkan menu" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: "8px", padding: "8px 10px", cursor: "pointer", fontSize: "15px" }}>☰</button>
-      </div>
-    );
-  }
+  const navBtnStyle = (active) => ({ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", borderRadius: "7px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", marginBottom: "2px", background: active ? "rgba(255,255,255,0.18)" : "transparent", color: "white" });
+  const standaloneItems = navSections.filter((s) => s.type === "item");
+  const groups = navSections.filter((s) => s.type === "group");
+  const activeGroup = groups.find((g) => g.key === groupKey) || groups[0] || null;
 
   return (
-    <div style={{ width: "250px", flexShrink: 0, background: "#064e3b", color: "white", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
-          {LEMBAGA.logo && <img src={LEMBAGA.logo} alt="Logo" style={{ width: "24px", height: "24px", objectFit: "contain", flexShrink: 0 }} />}
-          <span style={{ fontSize: "13px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{LEMBAGA.logo ? "" : "🕌 "}{LEMBAGA.namaSingkat}</span>
-        </div>
-        <button onClick={onToggleOpen} title="Sembunyikan menu" style={{ background: "transparent", border: "none", color: "white", cursor: "pointer", fontSize: "14px", opacity: 0.7, flexShrink: 0 }}>✕</button>
-      </div>
-
+    <div style={{ width: "250px", flexShrink: 0, background: "#064e3b", color: "white", minHeight: "100%", display: "flex", flexDirection: "column" }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
-        <div style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</div>
-        <div style={{ display: "inline-block", background: rl[user.role], padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 500, marginTop: "4px" }}>
+        <div style={{ display: "inline-block", background: rl[user.role], padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 500 }}>
           {rn[user.role]}{user.role === "wk" && user.kelas ? " — " + CL[user.kelas]?.sh : ""}{user.role === "tu" ? " — " + (user.layer === "putra" ? "Putra" : "Putri") : ""}
         </div>
       </div>
@@ -1203,31 +1217,26 @@ function Sidebar({ open, onToggleOpen, user, onLogout, CL, ACCS, setACCS, GM, se
       )}
 
       <div style={{ flex: 1, overflowY: "auto", padding: "10px" }}>
-        {(() => {
-          const activeGroup = groupKey ? navSections.find((s) => s.type === "group" && s.key === groupKey) : null;
-          if (activeGroup) {
-            return (
-              <div>
-                <button onClick={onBack} style={{ ...navBtnStyle(false), opacity: 0.8, marginBottom: "8px" }}>← Kembali</button>
-                <div style={{ fontSize: "9px", fontWeight: 700, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.6px", padding: "0 8px", marginBottom: "5px" }}>{activeGroup.icon} {activeGroup.label}</div>
-                {activeGroup.items.map((item) => (
-                  <button key={item.key} onClick={() => onSelect(item.key)} style={navBtnStyle(activeKey === item.key)}>{item.icon} {item.label}</button>
-                ))}
-              </div>
-            );
-          }
-          return (
-            <div>
-              {navSections.map((s) => s.type === "item" ? (
-                <button key={s.key} onClick={() => onSelect(s.key)} style={navBtnStyle(activeKey === s.key)}>{s.icon} {s.label}</button>
-              ) : (
-                <button key={s.key} onClick={() => onEnterGroup(s.key)} style={{ ...navBtnStyle(false), display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>{s.icon} {s.label}</span><span style={{ opacity: 0.55 }}>›</span>
-                </button>
+        {standaloneItems.map((s) => (
+          <button key={s.key} onClick={() => onSelect(s.key)} style={navBtnStyle(activeKey === s.key)}>{s.icon} {s.label}</button>
+        ))}
+        {groups.length > 0 && (
+          <div style={{ marginTop: standaloneItems.length ? "10px" : 0 }}>
+            {groups.length > 1 ? (
+              <select value={activeGroup?.key || ""} onChange={(e) => onSelectGroup(e.target.value)}
+                style={{ width: "100%", padding: "7px 8px", borderRadius: "6px", border: "none", fontSize: "11.5px", fontWeight: 600 }}>
+                {groups.map((g) => <option key={g.key} value={g.key}>{g.icon} {g.label}</option>)}
+              </select>
+            ) : (
+              <div style={{ fontSize: "9px", fontWeight: 700, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.6px", padding: "0 8px", marginBottom: "5px" }}>{groups[0].icon} {groups[0].label}</div>
+            )}
+            <div style={{ marginTop: "6px" }}>
+              {(activeGroup?.items || []).map((item) => (
+                <button key={item.key} onClick={() => onSelect(item.key)} style={navBtnStyle(activeKey === item.key)}>{item.icon} {item.label}</button>
               ))}
             </div>
-          );
-        })()}
+          </div>
+        )}
       </div>
 
       <div style={{ padding: "10px", borderTop: "1px solid rgba(255,255,255,0.12)", position: "relative" }}>
@@ -1235,7 +1244,6 @@ function Sidebar({ open, onToggleOpen, user, onLogout, CL, ACCS, setACCS, GM, se
           <button onClick={onOpenArchive} style={navBtnStyle(false)}>🗄️ Arsip</button>
         )}
         <button onClick={openAcct} style={navBtnStyle(false)}>⚙️ Akun</button>
-        <button onClick={onLogout} style={navBtnStyle(false)}>🚪 Keluar</button>
 
         {showAcct && (
           <div style={{ position: "absolute", bottom: "100%", left: "10px", right: "10px", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", boxShadow: "0 4px 20px rgba(0,0,0,0.25)", marginBottom: "8px", zIndex: 100 }}>
@@ -1347,6 +1355,16 @@ function defaultNavGroupKey(user) {
   if (user.role === "wk" || user.role === "guru") return "jadwal-pelajaran";
   if (user.role === "tu") return "kehadiran-guru";
   return null;
+}
+// The single "home" destination for each role — same key the app lands on right after
+// login. The content area's own "← Kembali" button (moved out of the Sidebar per
+// explicit request) returns here rather than tracking real browser-style history.
+function homeNavKey(user) {
+  if (!user) return "";
+  if (user.role === "admin" || user.role === "superadmin") return "dashboard";
+  if (user.role === "wk" || user.role === "guru") return "pribadi";
+  if (user.role === "tu") return "isi";
+  return "";
 }
 
 function SC({ icon, label, val, onClick, hint }) {
@@ -4969,41 +4987,49 @@ export default function App() {
     if (navGroupKey !== effGroupKey) setNavGroupKey(effGroupKey);
   }
   const inJadwalSection = JADWAL_PELAJARAN_KEYS.includes(effNavKey);
+  const isHome = effNavKey === homeNavKey(user);
 
   return (
     <div style={{ minHeight: "100vh", fontFamily: "system-ui,-apple-system,sans-serif", background: "#f9fafb" }}>
       {!user ? (
         <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} SEM={SEM} LEMBAGA={LEMBAGA} />
       ) : (
-        <div style={{ display: "flex", minHeight: "100vh" }}>
-          <Sidebar
-            open={sidebarOpen} onToggleOpen={() => setSidebarOpen((s) => !s)}
-            user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser}
-            LEMBAGA={LEMBAGA} archives={archives} onOpenArchive={() => setViewingArchive(true)}
-            navSections={navSections} groupKey={effGroupKey}
-            onEnterGroup={(gk) => {
-              const grp = navSections.find((s) => s.type === "group" && s.key === gk);
-              setNavGroupKey(gk);
-              if (grp) setNavKey(grp.items[0].key);
-              setViewingArchive(false);
-            }}
-            onBack={() => setNavGroupKey(null)}
-            activeKey={effNavKey} onSelect={(k) => { setNavKey(k); setViewingArchive(false); }}
-          />
-          <div style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
-            {viewingArchive ? (
-              <ArchiveView archives={archives} LEMBAGA={LEMBAGA} onClose={() => setViewingArchive(false)} />
-            ) : (
-              <>
-                {(user.role === "admin" || user.role === "superadmin") && (
-                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={user.role === "superadmin"} tab={effNavKey} />
-                )}
-                {user.role === "guru" && !inJadwalSection && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
-                {user.role === "wk" && !inJadwalSection && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} setTab={setNavKey} />}
-                {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} tab={effNavKey} />}
-                {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
-              </>
-            )}
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+          <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => setUser(null)} />
+          <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+            <Sidebar
+              open={sidebarOpen}
+              user={user} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser}
+              archives={archives} onOpenArchive={() => setViewingArchive(true)}
+              navSections={navSections} groupKey={effGroupKey}
+              onSelectGroup={(gk) => {
+                const grp = navSections.find((s) => s.type === "group" && s.key === gk);
+                setNavGroupKey(gk);
+                if (grp) setNavKey(grp.items[0].key);
+                setViewingArchive(false);
+              }}
+              activeKey={effNavKey} onSelect={(k) => { setNavKey(k); setViewingArchive(false); }}
+            />
+            <div style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
+              {viewingArchive ? (
+                <ArchiveView archives={archives} LEMBAGA={LEMBAGA} onClose={() => setViewingArchive(false)} />
+              ) : (
+                <>
+                  {!isHome && (
+                    <div style={{ padding: "14px 16px 0", maxWidth: "1200px", margin: "0 auto" }}>
+                      <button onClick={() => { setNavKey(homeNavKey(user)); setNavGroupKey(defaultNavGroupKey(user)); }} style={{ padding: "7px 14px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>← Kembali</button>
+                    </div>
+                  )}
+                  {(user.role === "admin" || user.role === "superadmin") && (
+                    <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={user.role === "superadmin"} tab={effNavKey} />
+                  )}
+                  {user.role === "guru" && !inJadwalSection && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
+                  {user.role === "wk" && !inJadwalSection && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} setTab={setNavKey} />}
+                  {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} tab={effNavKey} />}
+                  {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
