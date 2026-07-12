@@ -1120,7 +1120,7 @@ function DemoSec({ title, accounts, onSel }) {
 // across every role, Arsip, Akun, role/kelas switch, Keluar) now lives here instead,
 // per explicit user request. `open` toggles between the full panel and a slim rail
 // with just the reopen button, so it can be hidden/shown without losing its place.
-function Sidebar({ open, onToggleOpen, user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, LEMBAGA, archives, onOpenArchive, navGroups, activeKey, onSelect }) {
+function Sidebar({ open, onToggleOpen, user, onLogout, CL, ACCS, setACCS, GM, setGM, setUser, LEMBAGA, archives, onOpenArchive, navSections, groupKey, onEnterGroup, onBack, activeKey, onSelect }) {
   const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309", tu: "#0d9488" };
   const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel", tu: "Tata Usaha" };
   const [showAcct, setShowAcct] = useState(false);
@@ -1203,14 +1203,31 @@ function Sidebar({ open, onToggleOpen, user, onLogout, CL, ACCS, setACCS, GM, se
       )}
 
       <div style={{ flex: 1, overflowY: "auto", padding: "10px" }}>
-        {navGroups.map((g, gi) => (
-          <div key={gi} style={{ marginBottom: "14px" }}>
-            {g.title && <div style={{ fontSize: "9px", fontWeight: 700, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.6px", padding: "0 8px", marginBottom: "5px" }}>{g.title}</div>}
-            {g.items.map((item) => (
-              <button key={item.key} onClick={() => onSelect(item.key)} style={navBtnStyle(activeKey === item.key)}>{item.icon} {item.label}</button>
-            ))}
-          </div>
-        ))}
+        {(() => {
+          const activeGroup = groupKey ? navSections.find((s) => s.type === "group" && s.key === groupKey) : null;
+          if (activeGroup) {
+            return (
+              <div>
+                <button onClick={onBack} style={{ ...navBtnStyle(false), opacity: 0.8, marginBottom: "8px" }}>← Kembali</button>
+                <div style={{ fontSize: "9px", fontWeight: 700, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.6px", padding: "0 8px", marginBottom: "5px" }}>{activeGroup.icon} {activeGroup.label}</div>
+                {activeGroup.items.map((item) => (
+                  <button key={item.key} onClick={() => onSelect(item.key)} style={navBtnStyle(activeKey === item.key)}>{item.icon} {item.label}</button>
+                ))}
+              </div>
+            );
+          }
+          return (
+            <div>
+              {navSections.map((s) => s.type === "item" ? (
+                <button key={s.key} onClick={() => onSelect(s.key)} style={navBtnStyle(activeKey === s.key)}>{s.icon} {s.label}</button>
+              ) : (
+                <button key={s.key} onClick={() => onEnterGroup(s.key)} style={{ ...navBtnStyle(false), display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>{s.icon} {s.label}</span><span style={{ opacity: 0.55 }}>›</span>
+                </button>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       <div style={{ padding: "10px", borderTop: "1px solid rgba(255,255,255,0.12)", position: "relative" }}>
@@ -1243,72 +1260,93 @@ function Sidebar({ open, onToggleOpen, user, onLogout, CL, ACCS, setACCS, GM, se
   );
 }
 
-// One flat key namespace per role — Admin's own "Susun Jadwal" sub-tabs are flattened
-// into individual top-level sidebar entries (jadwal-grid/jadwal-master/jadwal-ketentuan/
-// jadwal-cetak) rather than nested, matching the rest of the sidebar's one-level list.
-// Wali Kelas gets both a "Rapor" group (its own 3 tabs) and a "Jadwal Pelajaran" group
-// (GuruJadwalView's 5 tabs); pure Guru Mapel gets a single "Input Nilai UAS" Rapor entry
-// plus the same Jadwal Pelajaran group — JADWAL_PELAJARAN_KEYS below is how the render
-// layer tells which of the two "islands" a given key belongs to.
+// One flat key namespace per role. Each section is either a direct-navigate `"item"`
+// (single destination, no drill-down needed) or a `"group"` — a folder the Sidebar
+// shows as a single row at the top level; clicking it drills into that group's own
+// item list plus a "← Kembali" back button, per the user's explicit request to group
+// the sidebar into pickable categories instead of one long flat list. Admin's own
+// "Susun Jadwal" sub-tabs are one such group (jadwal-grid/jadwal-master/jadwal-
+// ketentuan/jadwal-cetak) instead of 4 separate top-level rows. Wali Kelas gets both a
+// "Jadwal Pelajaran" group and a "Rapor" group (Jadwal Pelajaran listed FIRST — it now
+// takes priority over Rapor per explicit request); pure Guru Mapel gets the same Jadwal
+// Pelajaran group plus a single "Input Nilai UAS" item. JADWAL_PELAJARAN_KEYS is how
+// the render layer tells which of wk/guru's two "islands" a given key belongs to.
 const JADWAL_PELAJARAN_KEYS = ["pribadi", "hari", "kelas", "semua", "rekap"];
 function buildNavGroups(user, isSuperAdmin) {
   if (!user) return [];
   if (user.role === "admin" || user.role === "superadmin") {
-    return [{
-      title: null,
-      items: [
-        { key: "dashboard", label: "Dashboard", icon: "📊" },
+    return [
+      { type: "item", key: "dashboard", label: "Dashboard", icon: "📊" },
+      { type: "group", key: "data-sekolah", label: "Data Sekolah", icon: "🏫", items: [
         { key: "kelas", label: "Kelas", icon: "🏫" },
         { key: "wali", label: "Wali Kelas", icon: "👤" },
         { key: "siswa", label: "Data Siswa", icon: "🧑‍🎓" },
         { key: "mapel", label: "Mata Pelajaran", icon: "📚" },
         { key: "guru", label: "Penugasan Guru", icon: "🧑‍🏫" },
-        { key: "kehadiran", label: "Rekap Kehadiran", icon: "✅" },
-        ...(isSuperAdmin ? [
+      ] },
+      { type: "item", key: "kehadiran", label: "Rekap Kehadiran", icon: "✅" },
+      ...(isSuperAdmin ? [
+        { type: "group", key: "susun-jadwal", label: "Susun Jadwal", icon: "🗓️", items: [
           { key: "jadwal-grid", label: "Jadwal", icon: "🗓️" },
           { key: "jadwal-master", label: "Guru & Mapel", icon: "🧑‍🏫" },
           { key: "jadwal-ketentuan", label: "Ketentuan Guru", icon: "📋" },
           { key: "jadwal-cetak", label: "Cetak & Export", icon: "🖨️" },
-          { key: "identitas", label: "Identitas Lembaga", icon: "🏛️" },
-        ] : []),
-      ],
-    }];
+        ] },
+        { type: "item", key: "identitas", label: "Identitas Lembaga", icon: "🏛️" },
+      ] : []),
+    ];
   }
   if (user.role === "wk") {
     return [
-      { title: "Rapor", items: [
-        { key: "leger", label: "Leger Nilai", icon: "📋" },
-        { key: "kepribadian", label: "Kepribadian & Absensi", icon: "⭐" },
-        { key: "raport", label: "Cetak Raport", icon: "🖨️" },
-      ] },
-      { title: "Jadwal Pelajaran", items: [
+      { type: "group", key: "jadwal-pelajaran", label: "Jadwal Pelajaran", icon: "🗓️", items: [
         { key: "pribadi", label: "Jadwal Pribadi", icon: "👤" },
         { key: "hari", label: "Per Hari", icon: "📅" },
         { key: "kelas", label: "Per Kelas", icon: "🏫" },
         { key: "semua", label: "Semua Jadwal", icon: "🗓️" },
         { key: "rekap", label: "Rekap Saya", icon: "📊" },
+      ] },
+      { type: "group", key: "rapor", label: "Rapor", icon: "📋", items: [
+        { key: "leger", label: "Leger Nilai", icon: "📋" },
+        { key: "kepribadian", label: "Kepribadian & Absensi", icon: "⭐" },
+        { key: "raport", label: "Cetak Raport", icon: "🖨️" },
       ] },
     ];
   }
   if (user.role === "guru") {
     return [
-      { title: "Rapor", items: [{ key: "nilai", label: "Input Nilai UAS", icon: "📝" }] },
-      { title: "Jadwal Pelajaran", items: [
+      { type: "group", key: "jadwal-pelajaran", label: "Jadwal Pelajaran", icon: "🗓️", items: [
         { key: "pribadi", label: "Jadwal Pribadi", icon: "👤" },
         { key: "hari", label: "Per Hari", icon: "📅" },
         { key: "kelas", label: "Per Kelas", icon: "🏫" },
         { key: "semua", label: "Semua Jadwal", icon: "🗓️" },
         { key: "rekap", label: "Rekap Saya", icon: "📊" },
       ] },
+      { type: "item", key: "nilai", label: "Input Nilai UAS", icon: "📝" },
     ];
   }
   if (user.role === "tu") {
-    return [{ title: "Kehadiran Guru", items: [
-      { key: "isi", label: "Isi Kehadiran", icon: "✏️" },
-      { key: "rekap", label: "Rekap", icon: "📊" },
-    ] }];
+    return [
+      { type: "group", key: "kehadiran-guru", label: "Kehadiran Guru", icon: "✅", items: [
+        { key: "isi", label: "Isi Kehadiran", icon: "✏️" },
+        { key: "rekap", label: "Rekap", icon: "📊" },
+      ] },
+    ];
   }
   return [];
+}
+// Flattens buildNavGroups' item/group sections into a plain { key: label } map — used
+// to validate/resolve navKey without caring which group (if any) an item lives in.
+function navKeysOf(sections) {
+  return sections.flatMap((s) => (s.type === "item" ? [s.key] : s.items.map((i) => i.key)));
+}
+// Which group (if any) should already be drilled into right after login — Jadwal
+// Pelajaran takes priority over Rapor for wk/guru, and Tata Usaha's one group opens
+// straight away since there's nothing else to pick at the top level.
+function defaultNavGroupKey(user) {
+  if (!user) return null;
+  if (user.role === "wk" || user.role === "guru") return "jadwal-pelajaran";
+  if (user.role === "tu") return "kehadiran-guru";
+  return null;
 }
 
 function SC({ icon, label, val, onClick, hint }) {
@@ -1457,6 +1495,9 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
   const [showSemModal, setShowSemModal] = useState(false);
   const suggested = suggestNextSemester(SEM);
   const [semForm, setSemForm] = useState({ tipe: suggested.tipe, tahun: suggested.tahun });
+  // Collapsed by default — Rekap Kehadiran Guru takes priority on the Dashboard now,
+  // Rekap Per Kelas is secondary/on-demand per the user's explicit request.
+  const [showRekapKelas, setShowRekapKelas] = useState(false);
 
   const openSemModal = () => {
     const sug = suggestNextSemester(SEM);
@@ -1569,26 +1610,33 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
         <SC icon="📚" label="Semester" val={semLabelShort(SEM)} onClick={isSuperAdmin ? openSemModal : undefined} hint={isSuperAdmin ? "klik untuk ganti" : undefined} />
       </div>
       <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
-        <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb", fontSize: "14px", fontWeight: 500, color: "#111827" }}>📊 Rekap Per Kelas</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
-          <div style={{ padding: "14px", borderRight: "1px solid #e5e7eb" }}>
-            <div style={{ fontSize: "10px", fontWeight: 700, color: "#9ca3af", letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: "10px" }}>Putra</div>
-            {group1.map(renderKelas)}
-          </div>
-          <div style={{ padding: "14px" }}>
-            <div style={{ fontSize: "10px", fontWeight: 700, color: "#9ca3af", letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: "10px" }}>Putri</div>
-            {group2.length === 0
-              ? <p style={{ fontSize: "12px", color: "#9ca3af", fontStyle: "italic" }}>Tidak ada kelas tambahan</p>
-              : group2.map(renderKelas)}
-          </div>
-        </div>
-      </div>
-
-      <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "18px" }}>
         <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb", fontSize: "14px", fontWeight: 500, color: "#111827" }}>✅ Rekap Kehadiran Guru</div>
         <div style={{ padding: "14px" }}>
           <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} />
         </div>
+      </div>
+
+      <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "18px" }}>
+        <div style={{ padding: "12px 14px", borderBottom: showRekapKelas ? "1px solid #e5e7eb" : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: "14px", fontWeight: 500, color: "#111827" }}>📊 Rekap Per Kelas</span>
+          <button onClick={() => setShowRekapKelas((s) => !s)} style={{ padding: "5px 12px", background: showRekapKelas ? "#f3f4f6" : "#ecfdf5", color: showRekapKelas ? "#4b5563" : "#065f46", border: "none", borderRadius: "8px", fontSize: "11px", fontWeight: 500, cursor: "pointer" }}>
+            {showRekapKelas ? "Sembunyikan" : "Tampilkan"}
+          </button>
+        </div>
+        {showRekapKelas && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+            <div style={{ padding: "14px", borderRight: "1px solid #e5e7eb" }}>
+              <div style={{ fontSize: "10px", fontWeight: 700, color: "#9ca3af", letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: "10px" }}>Putra</div>
+              {group1.map(renderKelas)}
+            </div>
+            <div style={{ padding: "14px" }}>
+              <div style={{ fontSize: "10px", fontWeight: 700, color: "#9ca3af", letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: "10px" }}>Putri</div>
+              {group2.length === 0
+                ? <p style={{ fontSize: "12px", color: "#9ca3af", fontStyle: "italic" }}>Tidak ada kelas tambahan</p>
+                : group2.map(renderKelas)}
+            </div>
+          </div>
+        )}
       </div>
 
       {showSemModal && (
@@ -4852,6 +4900,7 @@ export default function App() {
   const [viewingArchive, setViewingArchive] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [navKey, setNavKey] = useState(""); // active Sidebar item; namespace differs per role, see buildNavGroups
+  const [navGroupKey, setNavGroupKey] = useState(null); // which Sidebar group (if any) is currently drilled into
 
   // One-time self-healing migration: make sure a Super Admin account always exists,
   // even on deployments whose ACCS data predates this role.
@@ -4890,20 +4939,36 @@ export default function App() {
     });
   }, [accsReady]); // eslint-disable-line
 
-  // Keep navKey valid for whoever's currently logged in: falls back to that role's
-  // first Sidebar item whenever it's missing (fresh login) or no longer applies (e.g.
-  // switching from Wali Kelas, whose Rapor group has "leger", to Guru Mapel, whose
-  // Rapor group only has "nilai" — "leger" would otherwise point at nothing).
-  useEffect(() => {
-    const validKeys = buildNavGroups(user, user?.role === "superadmin").flatMap((g) => g.items.map((i) => i.key));
-    if (!validKeys.includes(navKey)) setNavKey(validKeys[0] || "");
-  }, [user?.username, user?.role]); // eslint-disable-line
-
   if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady && kehadiranGuruReady)) {
     return <LoadingScreen />;
   }
 
-  const inJadwalSection = JADWAL_PELAJARAN_KEYS.includes(navKey);
+  // Resolved synchronously during render, not via a useEffect that corrects navKey
+  // *after* a bad render already committed — a stale navKey from the previous account/
+  // role would otherwise let e.g. WkView mount for one frame before being corrected,
+  // and WkView's own `[kelas]` mount effect (setTab("leger")) would then race an
+  // effect-based correction and sometimes win, silently landing back on Rapor instead
+  // of the intended Jadwal Pelajaran default. The corrected values are also written
+  // back into real state right here (React's sanctioned render-phase state-adjustment
+  // pattern, not a side effect — it re-renders this component immediately with the new
+  // state before anything commits) so navKey actually becomes valid going forward;
+  // without that write-back, navKey would stay permanently "invalid" and the fallback
+  // below would keep firing on every render, which previously made "← Kembali" a no-op
+  // for wk/guru since it kept re-forcing the default Jadwal Pelajaran group no matter
+  // what the user clicked.
+  const navSections = buildNavGroups(user, user?.role === "superadmin");
+  const validNavKeys = navKeysOf(navSections);
+  let effNavKey = navKey;
+  let effGroupKey = navGroupKey;
+  if (!validNavKeys.includes(navKey)) {
+    const defGroup = defaultNavGroupKey(user);
+    const grp = defGroup ? navSections.find((s) => s.type === "group" && s.key === defGroup) : null;
+    effGroupKey = grp ? defGroup : null;
+    effNavKey = grp ? grp.items[0].key : (validNavKeys[0] || "");
+    if (navKey !== effNavKey) setNavKey(effNavKey);
+    if (navGroupKey !== effGroupKey) setNavGroupKey(effGroupKey);
+  }
+  const inJadwalSection = JADWAL_PELAJARAN_KEYS.includes(effNavKey);
 
   return (
     <div style={{ minHeight: "100vh", fontFamily: "system-ui,-apple-system,sans-serif", background: "#f9fafb" }}>
@@ -4915,7 +4980,15 @@ export default function App() {
             open={sidebarOpen} onToggleOpen={() => setSidebarOpen((s) => !s)}
             user={user} onLogout={() => setUser(null)} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser}
             LEMBAGA={LEMBAGA} archives={archives} onOpenArchive={() => setViewingArchive(true)}
-            navGroups={buildNavGroups(user, user.role === "superadmin")} activeKey={navKey} onSelect={(k) => { setNavKey(k); setViewingArchive(false); }}
+            navSections={navSections} groupKey={effGroupKey}
+            onEnterGroup={(gk) => {
+              const grp = navSections.find((s) => s.type === "group" && s.key === gk);
+              setNavGroupKey(gk);
+              if (grp) setNavKey(grp.items[0].key);
+              setViewingArchive(false);
+            }}
+            onBack={() => setNavGroupKey(null)}
+            activeKey={effNavKey} onSelect={(k) => { setNavKey(k); setViewingArchive(false); }}
           />
           <div style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
             {viewingArchive ? (
@@ -4923,12 +4996,12 @@ export default function App() {
             ) : (
               <>
                 {(user.role === "admin" || user.role === "superadmin") && (
-                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={user.role === "superadmin"} tab={navKey} />
+                  <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={user.role === "superadmin"} tab={effNavKey} />
                 )}
                 {user.role === "guru" && !inJadwalSection && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
-                {user.role === "wk" && !inJadwalSection && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={navKey} setTab={setNavKey} />}
-                {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} tab={navKey} />}
-                {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={navKey} />}
+                {user.role === "wk" && !inJadwalSection && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} setTab={setNavKey} />}
+                {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} tab={effNavKey} />}
+                {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
               </>
             )}
           </div>
