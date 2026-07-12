@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import * as XLSX from "xlsx";
 import QRCode from "qrcode";
 import { supabase } from "./supabaseClient";
+import { requestPushPermission } from "./firebaseClient";
 
 const DEFAULT_CL = {
   aw1a: { name: "Awwaliyah I A", sh: "AW I A", wali: "Aan Widianto, M.Pd", mapel: ["Praktek Aqoid","Tauhid","Fiqih Praktik","Fiqih","Akhlaq","Imla'","Tarikh"] },
@@ -1198,10 +1199,22 @@ function NotifBell({ notifikasi, user, onOpen }) {
 // of Sidebar state: branding + the Sidebar show/hide toggle on the left, account owner +
 // Keluar on the right. Deliberately minimal (no nav, no Akun/Arsip) per explicit request;
 // everything else lives in the collapsible Sidebar below it.
-function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifikasi, setNotifikasi }) {
+function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifikasi, setNotifikasi, deviceTokens, setDeviceTokens }) {
   const markAllRead = () => {
     if (!notifikasi || !notifikasi.some((n) => !n.dibaca && (n.untukUsername === user.username || n.untukLayer === user.layer))) return;
     setNotifikasi((prev) => prev.map((n) => ((n.untukUsername === user.username || n.untukLayer === user.layer) ? { ...n, dibaca: true } : n)));
+  };
+  const [notifPerm, setNotifPerm] = useState(() => (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
+  const wantsPush = user.role === "tu" || user.role === "guru" || user.role === "wk";
+  const enablePush = async () => {
+    const ok = await requestPushPermission((token) => {
+      setDeviceTokens((prev) => {
+        const list = prev[user.username] || [];
+        if (list.some((t) => t.token === token)) return prev;
+        return { ...prev, [user.username]: [...list, { token, addedAt: new Date().toISOString() }] };
+      });
+    });
+    setNotifPerm(ok ? "granted" : (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
   };
   return (
     <div style={{ position: "sticky", top: 0, zIndex: 60, background: "#064e3b", color: "white", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
@@ -1211,6 +1224,9 @@ function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifik
         <span style={{ fontSize: "14px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{LEMBAGA.logo ? "" : "🕌 "}{LEMBAGA.namaSingkat}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+        {wantsPush && notifPerm === "default" && (
+          <button onClick={enablePush} title="Aktifkan notifikasi push di perangkat ini" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "11px", fontWeight: 500 }}>🔔 Aktifkan</button>
+        )}
         <NotifBell notifikasi={notifikasi} user={user} onOpen={markAllRead} />
         <span style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</span>
         <button onClick={onLogout} style={{ padding: "6px 12px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>Keluar</button>
@@ -5386,7 +5402,7 @@ export default function App() {
         )
       ) : (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => { setUser(null); setShowLogin(false); }} notifikasi={notifikasi} setNotifikasi={setNotifikasi} />
+          <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => { setUser(null); setShowLogin(false); }} notifikasi={notifikasi} setNotifikasi={setNotifikasi} deviceTokens={deviceTokens} setDeviceTokens={setDeviceTokens} />
           <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
             <Sidebar
               open={sidebarOpen}

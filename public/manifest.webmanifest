@@ -1,0 +1,12 @@
+{
+  "name": "MDT Jalaluddin Ar-Rumi — Sistem Nilai",
+  "short_name": "Sistem Nilai MDT",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#064e3b",
+  "icons": [
+    { "src": "/kop.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/kop.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
