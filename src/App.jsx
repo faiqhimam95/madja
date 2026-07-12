@@ -1523,7 +1523,7 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
       <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "18px" }}>
         <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb", fontSize: "14px", fontWeight: 500, color: "#111827" }}>✅ Rekap Kehadiran Guru</div>
         <div style={{ padding: "14px" }}>
-          <KehadiranRecapPanel JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} />
+          <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} />
         </div>
       </div>
 
@@ -3229,7 +3229,7 @@ function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAl
       {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} />}
       {tab === "mapel" && <AdminMapel CL={CL} setCL={setCL} setGM={setGM} />}
       {tab === "guru" && <AdminPenugasan ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} CL={CL} setCL={setCL} />}
-      {tab === "kehadiran" && <AdminKehadiranGuru JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} LEMBAGA={LEMBAGA} SEM={SEM} />}
+      {tab === "kehadiran" && <AdminKehadiranGuru JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} LEMBAGA={LEMBAGA} SEM={SEM} />}
       {tab === "jadwal" && isSuperAdmin && <AdminJadwal JADWAL={JADWAL} setJADWAL={setJADWAL} LEMBAGA={LEMBAGA} SEM={SEM} ACCS={ACCS} GM={GM} CL={CL} />}
       {tab === "identitas" && isSuperAdmin && <AdminLembaga LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} />}
     </div>
@@ -4152,7 +4152,7 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru }) {
       )}
       {tab === "rekap" && (
         myGuru ? (
-          <KehadiranRecapPanel JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} scopeGuruKode={myGuru.kode} />
+          <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} scopeGuruKode={myGuru.kode} />
         ) : (
           <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
             Akun Anda belum terhubung dengan data guru di Susun Jadwal. Hubungi Admin untuk menghubungkan akun ini lewat tab Susun Jadwal → Guru & Mapel.
@@ -4203,6 +4203,150 @@ function getBulanRange(yyyyMM) {
   const lastDay = new Date(y, m, 0).getDate();
   return { start: `${y}-${String(m).padStart(2, "0")}-01`, end: `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}` };
 }
+// Day-of-week for an arbitrary ISO date, not just "today" — needed so the read-only
+// Rekap "Per Hari" view can look up the right JADWAL_HARI grid for whatever past date
+// is selected, the same way TuKehadiranView does for today.
+function hariForISO(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return JS_DAY_TO_HARI[new Date(y, m - 1, d).getDay()] || null;
+}
+// Nama Panggilan (JADWAL.guru[].alias, set in Susun Jadwal) takes priority over the
+// full formal nama wherever a guru's name shows in the Kehadiran Guru feature.
+function guruDisplayName(guruByKode, kode) {
+  return guruByKode[kode]?.alias || guruByKode[kode]?.nama || kode;
+}
+// Jam I/II background tint — applied per-row in the slot table so the two periods stay
+// visually distinct even after the "one row per Jam" header cell is merged away.
+const JAM_TINT = { I: "rgba(59,130,246,0.055)", II: "rgba(168,85,247,0.055)" };
+
+// One row per (layer, jam, kelas) teaching slot that actually has a guru assigned —
+// the shared source of truth for both TuKehadiranView's editable list (today, one
+// layer) and KehadiranRecapPanel's read-only "Per Hari" view (any date, any scope).
+// layerFilter=null pulls both Putra+Putri (used when nothing scopes the recap to one
+// layer); guruFilter narrows to a single guru's own slots regardless of layer.
+function buildKehadiranDayRows(JADWAL, CL, dateISO, kehadiranGuru, layerFilter, guruFilter) {
+  const hari = hariForISO(dateISO);
+  if (!hari) return { hari: null, rows: [] };
+  const putraKelas = jadwalPutraKelas(JADWAL);
+  const putriKelas = jadwalPutriKelas(CL || {}, JADWAL);
+  const layers = layerFilter ? [layerFilter] : ["putra", "putri"];
+  const rows = [];
+  layers.forEach((layer) => {
+    const kelasList = layer === "putra" ? putraKelas : putriKelas;
+    const grid = layer === "putra" ? JADWAL.grid : JADWAL.gridPutri;
+    JADWAL_JAM.forEach((jam) => {
+      kelasList.forEach((k) => {
+        const cell = grid?.[hari]?.[jam.kode]?.[k.kode];
+        if (!cell?.g) return;
+        if (guruFilter && cell.g !== guruFilter) return;
+        const rec = kehadiranGuru?.[dateISO]?.[layer]?.[jam.kode]?.[k.kode] || null;
+        rows.push({ layer, jam, kelas: k, cell, rec });
+      });
+    });
+  });
+  return { hari, rows };
+}
+// Contiguous run-length groups of `rows` by `keyFn`, for the Jam column's rowspan —
+// rows must already be grouped/ordered so equal keys are adjacent (buildKehadiranDayRows
+// naturally does this: outer loop by layer, then jam, then kelas).
+function rowSpanGroups(rows, keyFn) {
+  const startOf = {};
+  const countOf = {};
+  rows.forEach((r, i) => {
+    const key = keyFn(r);
+    const prevKey = i > 0 ? keyFn(rows[i - 1]) : null;
+    if (key !== prevKey) startOf[i] = true;
+  });
+  let curStart = 0;
+  rows.forEach((r, i) => {
+    const key = keyFn(r);
+    if (startOf[i]) curStart = i;
+    countOf[curStart] = (countOf[curStart] || 0) + 1;
+  });
+  return { startOf, countOf };
+}
+
+// Shared table for both the editable "Isi Kehadiran" list and the read-only Rekap
+// "Per Hari" view — same Jam(merged)/Kelas/Guru/Mapel/Status/Keterangan structure,
+// same Jam I/II tint, same Nama Panggilan-first guru display, so the two always look
+// like the same screen per the user's explicit request. `editable` swaps the Status
+// buttons/Keterangan inputs for plain read-only badges/text.
+function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, onSetStatus, onPatchRecord, showLayer }) {
+  const { startOf, countOf } = rowSpanGroups(rows, (r) => `${r.layer}|${r.jam.kode}`);
+  return (
+    <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+          <thead>
+            <tr style={{ background: "#f9fafb" }}>
+              {["Jam", ...(showLayer ? ["Layer"] : []), "Kelas", "Guru", "Mapel", "Status", editable ? "Keterangan" : "Detail"].map((h) => (
+                <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const rec = r.rec;
+              const status = rec?.status || "";
+              const st = KEHADIRAN_STATUS.find((s) => s.kode === status);
+              const tint = JAM_TINT[r.jam.kode] || "transparent";
+              return (
+                <tr key={i} style={{ borderBottom: "1px solid #f3f4f6", background: tint }}>
+                  {startOf[i] && (
+                    <td rowSpan={countOf[i]} style={{ padding: "8px 10px", whiteSpace: "nowrap", verticalAlign: "middle", fontWeight: 600, borderRight: "1px solid #e5e7eb" }}>
+                      {r.jam.kode}<br /><span style={{ color: "#9ca3af", fontWeight: 400 }}>{r.jam.waktu}</span>
+                    </td>
+                  )}
+                  {showLayer && <td style={{ padding: "8px 10px", color: "#9ca3af", whiteSpace: "nowrap", verticalAlign: "top" }}>{r.layer === "putra" ? "Putra" : "Putri"}</td>}
+                  <td style={{ padding: "8px 10px", fontWeight: 500, color: "#047857", whiteSpace: "nowrap", verticalAlign: "top" }}>{r.kelas.label}</td>
+                  <td style={{ padding: "8px 10px", whiteSpace: "nowrap", verticalAlign: "top" }}>{guruDisplayName(guruByKode, r.cell.g)}</td>
+                  <td style={{ padding: "8px 10px", color: "#9ca3af", whiteSpace: "nowrap", verticalAlign: "top" }}>{mapelByKode[r.cell.m]?.nama || r.cell.m || "-"}</td>
+                  <td style={{ padding: "8px 10px", verticalAlign: "top" }}>
+                    {editable ? (
+                      <div style={{ display: "flex", gap: "3px" }}>
+                        {KEHADIRAN_STATUS.map((s) => (
+                          <button key={s.kode} disabled={locked} onClick={() => onSetStatus(r.layer, r.jam.kode, r.kelas.kode, r.cell.g, s.kode)} title={s.label}
+                            style={{ padding: "4px 9px", fontSize: "10px", fontWeight: 600, border: "none", borderRadius: "5px", cursor: locked ? "not-allowed" : "pointer", background: status === s.kode ? s.bg : "#f3f4f6", color: status === s.kode ? s.fg : "#9ca3af" }}>
+                            {s.kode}
+                          </button>
+                        ))}
+                      </div>
+                    ) : status ? (
+                      <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: 600, background: st?.bg, color: st?.fg }}>{st?.label || status}</span>
+                    ) : "-"}
+                  </td>
+                  <td style={{ padding: "8px 10px", minWidth: "180px", verticalAlign: "top" }}>
+                    {editable ? (
+                      <>
+                        {status === "I" && (
+                          <input type="text" disabled={locked} placeholder="Keterangan izin karena apa..." value={rec?.keterangan || ""}
+                            onChange={(e) => onPatchRecord(r.layer, r.jam.kode, r.kelas.kode, { keterangan: e.target.value })}
+                            style={{ width: "100%", padding: "4px 7px", border: "1px solid #d1d5db", borderRadius: "5px", fontSize: "11px", boxSizing: "border-box" }} />
+                        )}
+                        {status === "H" && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                            <input type="number" min="0" disabled={locked} placeholder="0" value={rec?.telat ?? ""}
+                              onChange={(e) => onPatchRecord(r.layer, r.jam.kode, r.kelas.kode, { telat: e.target.value ? Number(e.target.value) : undefined })}
+                              style={{ width: "56px", padding: "4px 7px", border: "1px solid #d1d5db", borderRadius: "5px", fontSize: "11px" }} />
+                            <span style={{ fontSize: "10px", color: "#9ca3af" }}>menit terlambat</span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{ color: "#6b7280" }}>
+                        {status === "I" && rec?.keterangan ? rec.keterangan : status === "H" && rec?.telat ? `Terlambat ${rec.telat} menit` : "-"}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 // Tata Usaha Putra/Putri: fills in guru attendance for TODAY only (per the confirmed
 // scope — no backfill/future dates, to avoid mis-dated entries), one layer (their own
@@ -4218,49 +4362,34 @@ function getBulanRange(yyyyMM) {
 function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, locked }) {
   const [tab, setTab] = useState("isi");
   const layer = user.layer;
-  const hari = JS_DAY_TO_HARI[new Date().getDay()] || null;
   const iso = todayISO();
-  const putraKelas = useMemo(() => jadwalPutraKelas(JADWAL), [JADWAL.kelasPutra]); // eslint-disable-line
-  const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}, JADWAL), [CL, JADWAL.kelasPutriNama, JADWAL.kelasPutra]); // eslint-disable-line
-  const kelasList = layer === "putra" ? putraKelas : putriKelas;
-  const grid = layer === "putra" ? JADWAL.grid : JADWAL.gridPutri;
   const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
   const mapelByKode = useMemo(() => Object.fromEntries((JADWAL.mapel || []).map((m) => [m.kode, m])), [JADWAL.mapel]);
+  const { hari, rows } = useMemo(() => buildKehadiranDayRows(JADWAL, CL, iso, kehadiranGuru, layer, null), [JADWAL, CL, iso, kehadiranGuru, layer]);
 
-  const rows = [];
-  if (hari) {
-    JADWAL_JAM.forEach((jam) => {
-      kelasList.forEach((k) => {
-        const cell = grid?.[hari]?.[jam.kode]?.[k.kode];
-        if (cell?.g) rows.push({ jam, kelas: k, cell });
-      });
-    });
-  }
-
-  const getRecord = (jamKode, kelasKode) => kehadiranGuru?.[iso]?.[layer]?.[jamKode]?.[kelasKode] || null;
-  const patchRecord = (jamKode, kelasKode, patch) => {
+  const patchRecord = (rLayer, jamKode, kelasKode, patch) => {
     if (locked) return;
     setKehadiranGuru((prev) => {
       const day = prev[iso] || {};
-      const layerData = day[layer] || {};
+      const layerData = day[rLayer] || {};
       const jamData = layerData[jamKode] || {};
       const next = { ...(jamData[kelasKode] || {}), ...patch };
-      return { ...prev, [iso]: { ...day, [layer]: { ...layerData, [jamKode]: { ...jamData, [kelasKode]: next } } } };
+      return { ...prev, [iso]: { ...day, [rLayer]: { ...layerData, [jamKode]: { ...jamData, [kelasKode]: next } } } };
     });
   };
-  const clearRecord = (jamKode, kelasKode) => {
+  const clearRecord = (rLayer, jamKode, kelasKode) => {
     if (locked) return;
     setKehadiranGuru((prev) => {
       const day = prev[iso] || {};
-      const layerData = day[layer] || {};
+      const layerData = day[rLayer] || {};
       const jamData = layerData[jamKode] || {};
-      return { ...prev, [iso]: { ...day, [layer]: { ...layerData, [jamKode]: { ...jamData, [kelasKode]: undefined } } } };
+      return { ...prev, [iso]: { ...day, [rLayer]: { ...layerData, [jamKode]: { ...jamData, [kelasKode]: undefined } } } };
     });
   };
-  const setStatus = (jamKode, kelasKode, guruKode, status) => {
-    const existing = getRecord(jamKode, kelasKode);
-    if (existing?.status === status) { clearRecord(jamKode, kelasKode); return; }
-    patchRecord(jamKode, kelasKode, { g: guruKode, status, keterangan: undefined, telat: undefined });
+  const setStatus = (rLayer, jamKode, kelasKode, guruKode, status) => {
+    const existing = kehadiranGuru?.[iso]?.[rLayer]?.[jamKode]?.[kelasKode] || null;
+    if (existing?.status === status) { clearRecord(rLayer, jamKode, kelasKode); return; }
+    patchRecord(rLayer, jamKode, kelasKode, { g: guruKode, status, keterangan: undefined, telat: undefined });
   };
 
   return (
@@ -4276,7 +4405,7 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, lo
       </div>
 
       {tab === "rekap" ? (
-        <KehadiranRecapPanel JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} scopeLayer={layer} />
+        <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} scopeLayer={layer} />
       ) : (
         <>
           {locked && (
@@ -4284,6 +4413,7 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, lo
               ⏳ Akun Anda belum dikonfirmasi Admin untuk semester ini — kehadiran bisa dilihat tapi belum bisa diisi/diubah.
             </div>
           )}
+          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0, marginBottom: "12px" }}>⏱️ Keterlambatan dihitung mulai dari 10 menit setelah jam masuk — di bawah itu tetap dicatat Hadir tanpa keterangan terlambat.</p>
           {!hari ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
               Hari ini Jumat — tidak ada jadwal pelajaran, tidak perlu mengisi kehadiran guru.
@@ -4291,58 +4421,7 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, lo
           ) : rows.length === 0 ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kelas {layer === "putra" ? "Putra" : "Putri"} di Susun Jadwal.</div>
           ) : (
-            <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-                  <thead>
-                    <tr style={{ background: "#f9fafb" }}>
-                      {["Jam", "Kelas", "Guru", "Mapel", "Status", "Keterangan"].map((h) => (
-                        <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map(({ jam, kelas: k, cell }) => {
-                      const rec = getRecord(jam.kode, k.kode);
-                      const status = rec?.status || "";
-                      return (
-                        <tr key={jam.kode + k.kode} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap", verticalAlign: "top" }}>{jam.kode} <span style={{ color: "#9ca3af" }}>({jam.waktu})</span></td>
-                          <td style={{ padding: "8px 10px", fontWeight: 500, color: "#047857", whiteSpace: "nowrap", verticalAlign: "top" }}>{k.label}</td>
-                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap", verticalAlign: "top" }}>{guruByKode[cell.g]?.nama || cell.g}</td>
-                          <td style={{ padding: "8px 10px", color: "#9ca3af", whiteSpace: "nowrap", verticalAlign: "top" }}>{mapelByKode[cell.m]?.nama || cell.m || "-"}</td>
-                          <td style={{ padding: "8px 10px", verticalAlign: "top" }}>
-                            <div style={{ display: "flex", gap: "3px" }}>
-                              {KEHADIRAN_STATUS.map((s) => (
-                                <button key={s.kode} disabled={locked} onClick={() => setStatus(jam.kode, k.kode, cell.g, s.kode)} title={s.label}
-                                  style={{ padding: "4px 9px", fontSize: "10px", fontWeight: 600, border: "none", borderRadius: "5px", cursor: locked ? "not-allowed" : "pointer", background: status === s.kode ? s.bg : "#f3f4f6", color: status === s.kode ? s.fg : "#9ca3af" }}>
-                                  {s.kode}
-                                </button>
-                              ))}
-                            </div>
-                          </td>
-                          <td style={{ padding: "8px 10px", minWidth: "180px", verticalAlign: "top" }}>
-                            {status === "I" && (
-                              <input type="text" disabled={locked} placeholder="Keterangan izin karena apa..." value={rec?.keterangan || ""}
-                                onChange={(e) => patchRecord(jam.kode, k.kode, { keterangan: e.target.value })}
-                                style={{ width: "100%", padding: "4px 7px", border: "1px solid #d1d5db", borderRadius: "5px", fontSize: "11px", boxSizing: "border-box" }} />
-                            )}
-                            {status === "H" && (
-                              <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                                <input type="number" min="0" disabled={locked} placeholder="0" value={rec?.telat ?? ""}
-                                  onChange={(e) => patchRecord(jam.kode, k.kode, { telat: e.target.value ? Number(e.target.value) : undefined })}
-                                  style={{ width: "56px", padding: "4px 7px", border: "1px solid #d1d5db", borderRadius: "5px", fontSize: "11px" }} />
-                                <span style={{ fontSize: "10px", color: "#9ca3af" }}>menit terlambat</span>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <KehadiranSlotTable rows={rows} guruByKode={guruByKode} mapelByKode={mapelByKode} editable locked={locked} onSetStatus={setStatus} onPatchRecord={patchRecord} />
           )}
         </>
       )}
@@ -4376,22 +4455,6 @@ function aggregateKehadiran(kehadiranGuru, start, end, layerFilter = null) {
 function buildKehadiranRecap(kehadiranGuru) {
   return aggregateKehadiran(kehadiranGuru, "0000-01-01", "9999-12-31", null);
 }
-function listKehadiranEntries(kehadiranGuru, dateISO, layerFilter, guruFilter) {
-  const entries = [];
-  const day = kehadiranGuru?.[dateISO] || {};
-  ["putra", "putri"].forEach((layer) => {
-    if (layerFilter && layer !== layerFilter) return;
-    Object.entries(day?.[layer] || {}).forEach(([jamKode, jamData]) => {
-      Object.entries(jamData || {}).forEach(([kelasKode, rec]) => {
-        if (!rec?.g || !rec?.status) return;
-        if (guruFilter && rec.g !== guruFilter) return;
-        entries.push({ layer, jamKode, kelasKode, ...rec });
-      });
-    });
-  });
-  return entries;
-}
-
 function buildKehadiranGuruExcel(JADWAL, kehadiranGuru, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM) {
   const counts = buildKehadiranRecap(kehadiranGuru);
   const rows = (JADWAL.guru || []).filter((g) => counts[g.kode]).map((g) => {
@@ -4443,11 +4506,12 @@ function KehadiranBarChart({ counts }) {
 // Pelajaran (scopeGuruKode set — just that one guru, wherever they teach). "Per Hari"
 // shows the raw entries for that single date; "Per Minggu"/"Per Bulan" aggregate into
 // the H/S/I/A percentage bar chart plus total menit terlambat.
-function KehadiranRecapPanel({ JADWAL, kehadiranGuru, scopeLayer = null, scopeGuruKode = null }) {
+function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, scopeGuruKode = null }) {
   const [mode, setMode] = useState("minggu");
   const [selDate, setSelDate] = useState(todayISO());
   const [selMonth, setSelMonth] = useState(todayISO().slice(0, 7));
   const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
+  const mapelByKode = useMemo(() => Object.fromEntries((JADWAL.mapel || []).map((m) => [m.kode, m])), [JADWAL.mapel]);
 
   const { start, end, label } = useMemo(() => {
     if (mode === "hari") return { start: selDate, end: selDate, label: formatTanggalIndo(selDate) };
@@ -4463,10 +4527,10 @@ function KehadiranRecapPanel({ JADWAL, kehadiranGuru, scopeLayer = null, scopeGu
   const counts = useMemo(() => aggregateKehadiran(kehadiranGuru, start, end, scopeLayer), [kehadiranGuru, start, end, scopeLayer]);
   const scopedCounts = scopeGuruKode ? { [scopeGuruKode]: counts[scopeGuruKode] || { H: 0, S: 0, I: 0, A: 0, telat: 0 } } : counts;
   const rows = Object.keys(scopedCounts)
-    .map((kode) => ({ kode, nama: guruByKode[kode]?.nama || kode, c: scopedCounts[kode] }))
+    .map((kode) => ({ kode, nama: guruDisplayName(guruByKode, kode), c: scopedCounts[kode] }))
     .sort((a, b) => (b.c.H + b.c.S + b.c.I + b.c.A) - (a.c.H + a.c.S + a.c.I + a.c.A));
   const totalRecords = rows.reduce((s, r) => s + r.c.H + r.c.S + r.c.I + r.c.A, 0);
-  const entries = mode === "hari" ? listKehadiranEntries(kehadiranGuru, selDate, scopeLayer, scopeGuruKode) : null;
+  const dayView = mode === "hari" ? buildKehadiranDayRows(JADWAL, CL, selDate, kehadiranGuru, scopeLayer, scopeGuruKode) : null;
 
   return (
     <div>
@@ -4495,34 +4559,12 @@ function KehadiranRecapPanel({ JADWAL, kehadiranGuru, scopeLayer = null, scopeGu
       </div>
 
       {mode === "hari" ? (
-        !entries || entries.length === 0 ? (
+        !dayView.hari ? (
+          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Jumat — tidak ada jadwal pelajaran tanggal ini.</div>
+        ) : dayView.rows.length === 0 ? (
           <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kehadiran tercatat tanggal ini.</div>
         ) : (
-          <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-              <thead>
-                <tr style={{ background: "#f9fafb" }}>
-                  {["Guru", "Layer", "Jam", "Status", "Detail"].map((h) => (
-                    <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((e, i) => {
-                  const st = KEHADIRAN_STATUS.find((s) => s.kode === e.status);
-                  return (
-                    <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                      <td style={{ padding: "8px 12px" }}>{guruByKode[e.g]?.nama || e.g}</td>
-                      <td style={{ padding: "8px 12px", color: "#9ca3af" }}>{e.layer === "putra" ? "Putra" : "Putri"}</td>
-                      <td style={{ padding: "8px 12px" }}>{e.jamKode}</td>
-                      <td style={{ padding: "8px 12px" }}><span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: 600, background: st?.bg, color: st?.fg }}>{st?.label || e.status}</span></td>
-                      <td style={{ padding: "8px 12px", color: "#6b7280" }}>{e.status === "I" && e.keterangan ? e.keterangan : e.status === "H" && e.telat ? `Terlambat ${e.telat} menit` : "-"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <KehadiranSlotTable rows={dayView.rows} guruByKode={guruByKode} mapelByKode={mapelByKode} editable={false} showLayer={!scopeLayer} />
         )
       ) : totalRecords === 0 ? (
         <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kehadiran tercatat pada periode ini.</div>
@@ -4557,7 +4599,7 @@ function KehadiranRecapPanel({ JADWAL, kehadiranGuru, scopeLayer = null, scopeGu
   );
 }
 
-function AdminKehadiranGuru({ JADWAL, kehadiranGuru, LEMBAGA, SEM }) {
+function AdminKehadiranGuru({ JADWAL, CL, kehadiranGuru, LEMBAGA, SEM }) {
   const doExport = () => {
     const wb = buildKehadiranGuruExcel(JADWAL, kehadiranGuru, LEMBAGA, SEM);
     XLSX.writeFile(wb, `Kehadiran_Guru_${semLabel(SEM).replace(" ", "_").replace("/", "-")}.xlsx`);
@@ -4568,7 +4610,7 @@ function AdminKehadiranGuru({ JADWAL, kehadiranGuru, LEMBAGA, SEM }) {
         <p style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}>Rekap kehadiran guru, diisi Tata Usaha Putra/Putri tiap hari lewat menu Jadwal Pelajaran → Kehadiran Guru mereka sendiri. Direset bersamaan dengan reset semester. Export Excel selalu mengunduh rekap satu semester penuh, terlepas dari filter tampilan di bawah.</p>
         <button onClick={doExport} style={{ padding: "8px 16px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>📥 Export Excel</button>
       </div>
-      <KehadiranRecapPanel JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} />
+      <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} />
     </div>
   );
 }
