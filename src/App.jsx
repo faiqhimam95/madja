@@ -1015,7 +1015,33 @@ function RedBtn({ onClick, children, style = {} }) {
 const inputA = { width: "100%", padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "13px", boxSizing: "border-box" };
 const labelA = { display: "block", fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "5px" };
 
-function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA }) {
+// First thing anyone sees on opening the app while logged out — a public, read-only
+// Rekap Absensi Guru (both layers, via the same generic KehadiranRecapPanel every
+// logged-in role already uses) instead of a bare login form, per explicit user request
+// ("saat install pertama...langsung rekap absensi guru"). Deliberately shows this every
+// time nobody's logged in (fresh open OR after Keluar), not just the literal first
+// install, since a logged-out visitor expects the same landing either way. Note this
+// makes guru names + H/S/I/A recap visible to anyone who opens the app/URL, with no
+// authentication gate — an intentional trade-off per the request, not an oversight.
+function PublicRekapLanding({ JADWAL, CL, kehadiranGuru, LEMBAGA, onMasuk }) {
+  return (
+    <div style={{ minHeight: "100vh", background: "#f9fafb", fontFamily: "system-ui,-apple-system,sans-serif" }}>
+      <div style={{ background: "#064e3b", color: "white", padding: "20px 16px", textAlign: "center" }}>
+        {LEMBAGA.logo ? <img src={LEMBAGA.logo} alt="Logo" style={{ width: "48px", height: "48px", objectFit: "contain", marginBottom: "6px" }} /> : <div style={{ fontSize: "38px", marginBottom: "6px" }}>🕌</div>}
+        <div style={{ fontSize: "17px", fontWeight: 500 }}>{LEMBAGA.namaSingkat}</div>
+        <div style={{ fontSize: "12px", opacity: 0.75, marginTop: "2px" }}>✅ Rekap Kehadiran Guru</div>
+      </div>
+      <div style={{ padding: "16px", maxWidth: "900px", margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px" }}>
+          <GreenBtn onClick={onMasuk} style={{ padding: "9px 18px", fontSize: "13px" }}>🔐 Masuk</GreenBtn>
+        </div>
+        <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} />
+      </div>
+    </div>
+  );
+}
+
+function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA, onBack }) {
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [err, setErr] = useState("");
@@ -1066,6 +1092,9 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA }) {
         <div style={{ fontSize: "12px", opacity: 0.65 }}>Semester {semLabel(SEM)}</div>
       </div>
       <div style={{ background: "white", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "380px" }}>
+        {onBack && !chooseKelas && (
+          <button onClick={onBack} style={{ display: "block", marginBottom: "14px", padding: 0, background: "transparent", border: "none", color: "#6b7280", fontSize: "12px", cursor: "pointer" }}>← Kembali ke Rekap</button>
+        )}
         {chooseKelas ? (
           <div>
             <p style={{ fontSize: "13px", color: "#111827", marginTop: 0, marginBottom: "14px", textAlign: "center" }}>
@@ -1116,6 +1145,51 @@ function DemoSec({ title, accounts, onSel }) {
   );
 }
 
+// Which `notifikasi` entries belong to the given logged-in user — tu accounts see
+// warnings/izin addressed to their own layer, guru/wk accounts see anything addressed
+// to their own username (izin confirmations, peringatan sent to them). Admin/superadmin
+// aren't a target of either direction in this feature, so they see nothing here.
+function notifikasiForUser(notifikasi, user) {
+  if (!user) return [];
+  if (user.role === "tu") return (notifikasi || []).filter((n) => n.untukLayer === user.layer);
+  if (user.role === "guru" || user.role === "wk") return (notifikasi || []).filter((n) => n.untukUsername === user.username);
+  return [];
+}
+
+// Realtime-synced in-app notification bell — the reliable fallback/history for the
+// Guru↔TU izin/peringatan flow that works regardless of OS push permission/delivery
+// (see [[kehadiran_guru_tu]]). Dropdown shows newest-first, click marks all as read.
+function NotifBell({ notifikasi, user, onOpen }) {
+  const [open, setOpen] = useState(false);
+  const mine = useMemo(() => notifikasiForUser(notifikasi, user).slice().reverse(), [notifikasi, user]);
+  const unread = mine.filter((n) => !n.dibaca).length;
+  if (!user || (user.role !== "tu" && user.role !== "guru" && user.role !== "wk")) return null;
+  return (
+    <div style={{ position: "relative" }}>
+      <button onClick={() => setOpen((o) => { const next = !o; if (next) onOpen?.(); return next; })} title="Notifikasi" style={{ position: "relative", background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "14px" }}>
+        🔔
+        {unread > 0 && <span style={{ position: "absolute", top: "-4px", right: "-4px", background: "#dc2626", color: "white", borderRadius: "9px", fontSize: "9px", fontWeight: 700, padding: "1px 5px", minWidth: "14px", textAlign: "center" }}>{unread}</span>}
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: "6px", width: "300px", maxHeight: "360px", overflowY: "auto", background: "white", color: "#111827", borderRadius: "10px", boxShadow: "0 4px 20px rgba(0,0,0,0.25)", zIndex: 100 }}>
+          <div style={{ padding: "10px 12px", fontSize: "12px", fontWeight: 600, borderBottom: "1px solid #f3f4f6" }}>Notifikasi</div>
+          {mine.length === 0 ? (
+            <div style={{ padding: "20px", textAlign: "center", color: "#9ca3af", fontSize: "11.5px" }}>Belum ada notifikasi.</div>
+          ) : (
+            mine.slice(0, 30).map((n) => (
+              <div key={n.id} style={{ padding: "9px 12px", borderBottom: "1px solid #f9fafb", fontSize: "11.5px", background: n.dibaca ? "white" : "#f0fdf4" }}>
+                <div style={{ fontWeight: 600, color: n.tipe === "izin" ? "#1e40af" : "#92400e", marginBottom: "2px" }}>{n.tipe === "izin" ? "📨 Izin" : "⚠️ Peringatan"}</div>
+                <div style={{ color: "#374151" }}>{n.pesan}</div>
+                <div style={{ color: "#9ca3af", fontSize: "10px", marginTop: "3px" }}>{new Date(n.waktu).toLocaleString("id-ID")}</div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Replaces the old top Header bar entirely — every navigational choice (section tabs
 // across every role, Arsip, Akun, role/kelas switch, Keluar) now lives here instead,
 // per explicit user request. `open` toggles between the full panel and a slim rail
@@ -1124,7 +1198,11 @@ function DemoSec({ title, accounts, onSel }) {
 // of Sidebar state: branding + the Sidebar show/hide toggle on the left, account owner +
 // Keluar on the right. Deliberately minimal (no nav, no Akun/Arsip) per explicit request;
 // everything else lives in the collapsible Sidebar below it.
-function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout }) {
+function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifikasi, setNotifikasi }) {
+  const markAllRead = () => {
+    if (!notifikasi || !notifikasi.some((n) => !n.dibaca && (n.untukUsername === user.username || n.untukLayer === user.layer))) return;
+    setNotifikasi((prev) => prev.map((n) => ((n.untukUsername === user.username || n.untukLayer === user.layer) ? { ...n, dibaca: true } : n)));
+  };
   return (
     <div style={{ position: "sticky", top: 0, zIndex: 60, background: "#064e3b", color: "white", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
@@ -1133,6 +1211,7 @@ function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout }) {
         <span style={{ fontSize: "14px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{LEMBAGA.logo ? "" : "🕌 "}{LEMBAGA.namaSingkat}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+        <NotifBell notifikasi={notifikasi} user={user} onOpen={markAllRead} />
         <span style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</span>
         <button onClick={onLogout} style={{ padding: "6px 12px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>Keluar</button>
       </div>
@@ -4150,6 +4229,84 @@ function JadwalPribadiTab({ myGuru, rows }) {
   );
 }
 
+// One slot row inside a GuruStatusKehadiranPanel day card — read-only badge for
+// Kemarin, or an "Ajukan Izin" button (+ inline keterangan form) for Hari Ini/Besok on
+// any slot that isn't already marked Izin. Kept self-contained (owns its own open/closed
+// form state) so the parent panel doesn't need one entry of state per slot.
+function StatusKehadiranRow({ row, editable, onAjukanIzin, locked }) {
+  const [open, setOpen] = useState(false);
+  const [ket, setKet] = useState("");
+  const status = row.rec?.status || "";
+  const st = KEHADIRAN_STATUS.find((s) => s.kode === status);
+  const submit = () => {
+    onAjukanIzin(row, ket);
+    setOpen(false);
+    setKet("");
+  };
+  return (
+    <div style={{ padding: "8px 10px", borderBottom: "1px solid #f3f4f6" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <div style={{ fontSize: "11.5px", minWidth: 0 }}>
+          <span style={{ fontWeight: 600, color: "#047857" }}>{row.jam.kode}</span>
+          <span style={{ color: "#9ca3af" }}> · {row.jam.waktu} · </span>
+          <span style={{ fontWeight: 500 }}>{row.kelas.label}</span>
+        </div>
+        {status ? (
+          <span style={{ flexShrink: 0, padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: 600, background: st?.bg, color: st?.fg }}>{st?.label || status}</span>
+        ) : editable ? (
+          <button disabled={locked} onClick={() => setOpen((o) => !o)} style={{ flexShrink: 0, padding: "4px 9px", fontSize: "10.5px", fontWeight: 500, border: "1px solid #d1d5db", borderRadius: "6px", background: "white", color: "#374151", cursor: locked ? "not-allowed" : "pointer" }}>📨 Ajukan Izin</button>
+        ) : (
+          <span style={{ flexShrink: 0, fontSize: "10.5px", color: "#d1d5db" }}>-</span>
+        )}
+      </div>
+      {open && (
+        <div style={{ marginTop: "6px", display: "flex", gap: "6px" }}>
+          <input type="text" autoFocus value={ket} onChange={(e) => setKet(e.target.value)} placeholder="Keterangan izin (opsional)..."
+            style={{ flex: 1, padding: "5px 8px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px", boxSizing: "border-box" }} />
+          <GreenBtn onClick={submit} style={{ padding: "5px 10px", fontSize: "11px" }}>Kirim</GreenBtn>
+          <button onClick={() => setOpen(false)} style={{ padding: "5px 10px", background: "#f3f4f6", color: "#4b5563", border: "none", borderRadius: "6px", fontSize: "11px", cursor: "pointer" }}>Batal</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Guru's own 3-day attendance status (Kemarin/Hari Ini/Besok), shown above the full
+// personal schedule per explicit user request — "Ajukan Izin" is only offered on Hari
+// Ini/Besok (Kemarin is already history, read-only). Each of the 3 day-views is a
+// `buildKehadiranDayRows(...)` result filtered to this guru's own kode — same shared
+// row-building function TU's fill screen and the recap panels already use.
+function GuruStatusKehadiranPanel({ days, onAjukanIzin, locked }) {
+  const cards = [
+    { key: "kemarin", label: "Kemarin", editable: false },
+    { key: "hariIni", label: "Hari Ini", editable: true },
+    { key: "besok", label: "Besok", editable: true },
+  ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", marginBottom: "16px" }}>
+      {cards.map((c) => {
+        const d = days[c.key];
+        return (
+          <div key={c.key} style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+            <div style={{ padding: "8px 12px", background: "#f9fafb", fontSize: "12px", fontWeight: 600, color: "#374151" }}>
+              {c.label} <span style={{ fontWeight: 400, color: "#9ca3af" }}>· {formatTanggalIndo(d.iso)}</span>
+            </div>
+            {!d.hari ? (
+              <div style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "11px" }}>Jumat — tidak ada jadwal.</div>
+            ) : d.rows.length === 0 ? (
+              <div style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "11px" }}>Tidak ada jadwal mengajar.</div>
+            ) : (
+              d.rows.map((row, i) => (
+                <StatusKehadiranRow key={i} row={row} editable={c.editable} locked={locked} onAjukanIzin={(r, ket) => onAjukanIzin(r, d.iso, ket)} />
+              ))
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // One kelas x jam grid per Putra/Putri, for a single selected Hari.
 function JadwalPerHariTab({ hari, setHari, putraKelas, putriKelas, JADWAL, guruByKode, mapelByKode }) {
   const cellLabel = (cell) => {
@@ -4243,7 +4400,7 @@ function JadwalPerKelasTab({ kelasKode, setKelasKode, putraKelas, putriKelas, JA
   );
 }
 
-function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, tab }) {
+function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKehadiranGuru, ACCS, deviceTokens, setNotifikasi, locked, tab }) {
   const putraKelas = useMemo(() => jadwalPutraKelas(JADWAL), [JADWAL.kelasPutra]); // eslint-disable-line
   const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}, JADWAL), [CL, JADWAL.kelasPutriNama, JADWAL.kelasPutra]); // eslint-disable-line
   const wustoPiMirror = useMemo(() => computeWustoPiMirror(putriKelas), [putriKelas]);
@@ -4252,6 +4409,7 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, tab }) 
   const myGuru = (JADWAL.guru || []).find((g) => g.accsUser === user.username) || null;
   const [hari, setHari] = useState(JADWAL_HARI[0]);
   const [kelasKode, setKelasKode] = useState(putraKelas[0]?.kode || "");
+  const [showFullJadwal, setShowFullJadwal] = useState(true);
 
   const pribadiRows = useMemo(
     () => jadwalPribadiRows(JADWAL, putraKelas, putriKelas, wustoPiMirror, myGuru?.kode, mapelByKode),
@@ -4261,6 +4419,36 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, tab }) 
     () => buildJadwalHTML(JADWAL, LEMBAGA, SEM, putriKelas, false, putraKelas),
     [JADWAL, LEMBAGA, SEM, putriKelas, putraKelas]
   );
+  const statusDays = useMemo(() => {
+    if (!myGuru) return null;
+    const isoOf = { kemarin: addDaysISO(todayISO(), -1), hariIni: todayISO(), besok: addDaysISO(todayISO(), 1) };
+    const out = {};
+    Object.entries(isoOf).forEach(([key, iso]) => {
+      const { hari: h, rows } = buildKehadiranDayRows(JADWAL, CL, iso, kehadiranGuru, null, myGuru.kode);
+      out[key] = { iso, hari: h, rows };
+    });
+    return out;
+  }, [JADWAL, CL, kehadiranGuru, myGuru]);
+
+  // Guru submits their own izin directly (final, not a pending request TU must approve —
+  // TU still sees/can correct it via their own existing Isi Kehadiran screen) — writes
+  // straight into kehadiranGuru with the same shape TU's own patchRecord uses, logs a
+  // notifikasi entry so TU sees it even without push, then best-effort pushes to every
+  // TU account on that slot's layer.
+  const submitIzin = (row, dateISO, keterangan) => {
+    if (locked || !myGuru) return;
+    const { layer, jam, kelas } = row;
+    setKehadiranGuru((prev) => {
+      const day = prev[dateISO] || {};
+      const layerData = day[layer] || {};
+      const jamData = layerData[jam.kode] || {};
+      return { ...prev, [dateISO]: { ...day, [layer]: { ...layerData, [jam.kode]: { ...jamData, [kelas.kode]: { g: myGuru.kode, status: "I", keterangan, sumber: "guru" } } } } };
+    });
+    const pesan = `${myGuru.nama} mengajukan izin — ${kelas.label} Jam ${jam.kode} (${formatTanggalIndo(dateISO)})${keterangan ? `: ${keterangan}` : ""}`;
+    setNotifikasi((prev) => trimNotifikasi([...prev, makeNotifikasi({ dari: user.username, untukLayer: layer, tipe: "izin", pesan, kelas: kelas.label, jam: jam.kode })]));
+    const tuUsernames = (ACCS || []).filter((a) => a.role === "tu" && a.layer === layer).map((a) => a.u);
+    sendPushBestEffort(deviceTokens, tuUsernames, { title: "📨 Izin Guru", body: pesan, data: { tipe: "izin" } }).catch(() => {});
+  };
 
   return (
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
@@ -4268,7 +4456,19 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, tab }) 
         <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>🗓️ Jadwal Pelajaran</h2>
         <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>{user.name} — Semester {semLabel(SEM)}</p>
       </div>
-      {tab === "pribadi" && <JadwalPribadiTab myGuru={myGuru} rows={pribadiRows} />}
+      {tab === "pribadi" && (
+        myGuru ? (
+          <>
+            <GuruStatusKehadiranPanel days={statusDays} locked={locked} onAjukanIzin={submitIzin} />
+            <button onClick={() => setShowFullJadwal((s) => !s)} style={{ marginBottom: "10px", padding: "7px 14px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>
+              {showFullJadwal ? "▾ Sembunyikan Jadwal Lengkap" : "▸ Tampilkan Jadwal Lengkap"}
+            </button>
+            {showFullJadwal && <JadwalPribadiTab myGuru={myGuru} rows={pribadiRows} />}
+          </>
+        ) : (
+          <JadwalPribadiTab myGuru={myGuru} rows={pribadiRows} />
+        )
+      )}
       {tab === "hari" && <JadwalPerHariTab hari={hari} setHari={setHari} putraKelas={putraKelas} putriKelas={putriKelas} JADWAL={JADWAL} guruByKode={guruByKode} mapelByKode={mapelByKode} />}
       {tab === "kelas" && <JadwalPerKelasTab kelasKode={kelasKode} setKelasKode={setKelasKode} putraKelas={putraKelas} putriKelas={putriKelas} JADWAL={JADWAL} guruByKode={guruByKode} mapelByKode={mapelByKode} />}
       {tab === "semua" && (
@@ -4335,6 +4535,52 @@ function getBulanRange(yyyyMM) {
 function hariForISO(iso) {
   const [y, m, d] = iso.split("-").map(Number);
   return JS_DAY_TO_HARI[new Date(y, m - 1, d).getDay()] || null;
+}
+// Parses a JADWAL_JAM "waktu" string like "05.30 - 06.30" into its start time as minutes
+// since midnight (330) — used to compare against the current clock time for TU's "Kirim
+// Peringatan" button (guru not yet marked present ~10 minutes after class start).
+function jamStartMinutes(waktu) {
+  const m = /^(\d{1,2})\.(\d{2})/.exec(waktu || "");
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+function nowMinutesOfDay() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+// In-app notification log (Guru↔TU izin/peringatan) — the realtime-synced fallback that
+// works regardless of push permission/delivery. Flat array, newest last, trimmed on every
+// write since (unlike kehadiranGuru) it has no natural per-date key to bound its size.
+const NOTIF_TRIM_LIMIT = 150;
+function trimNotifikasi(list) {
+  return list.length > NOTIF_TRIM_LIMIT ? list.slice(list.length - NOTIF_TRIM_LIMIT) : list;
+}
+function makeNotifikasi({ dari, untukUsername = null, untukLayer = null, tipe, pesan, kelas = null, jam = null }) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    dari, untukUsername, untukLayer, tipe, pesan, kelas, jam,
+    waktu: new Date().toISOString(),
+    dibaca: false,
+  };
+}
+// Best-effort OS push dispatch (Firebase Cloud Messaging via api/send-push.js) —
+// resolves target device tokens from the `deviceTokens` slice and fires one request per
+// token. Deliberately never throws: this is an enhancement on top of the in-app
+// `notifikasi` log, which is what already recorded the event — a missing token (push
+// never enabled), a 404 (api/send-push.js not deployed yet), or a network error must
+// never surface to the caller or block the kehadiranGuru/notifikasi write that already
+// happened before this was called.
+async function sendPushBestEffort(deviceTokens, usernames, { title, body, data }) {
+  const tokens = (usernames || []).flatMap((u) => (deviceTokens?.[u] || []).map((t) => t.token));
+  if (tokens.length === 0) return;
+  await Promise.allSettled(
+    tokens.map((token) =>
+      fetch("/api/send-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, title, body, data: data || {} }),
+      }).catch(() => {})
+    )
+  );
 }
 // Nama Panggilan (JADWAL.guru[].alias, set in Susun Jadwal) takes priority over the
 // full formal nama wherever a guru's name shows in the Kehadiran Guru feature.
@@ -4409,7 +4655,7 @@ function rowSpanGroups(rows, keyFn) {
 // same Jam I/II tint, same Nama Panggilan-first guru display, so the two always look
 // like the same screen per the user's explicit request. `editable` swaps the Status
 // buttons/Keterangan inputs for plain read-only badges/text.
-function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, onSetStatus, onPatchRecord, showLayer }) {
+function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, onSetStatus, onPatchRecord, showLayer, onKirimPeringatan }) {
   const { startOf, countOf } = rowSpanGroups(rows, (r) => `${r.layer}|${r.jam.kode}`);
   return (
     <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
@@ -4452,6 +4698,18 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
                     ) : status ? (
                       <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: 600, background: st?.bg, color: st?.fg }}>{st?.label || status}</span>
                     ) : "-"}
+                    {editable && !status && onKirimPeringatan && r.peringatanEligible && (
+                      rec?.peringatanAt ? (
+                        <div style={{ marginTop: "4px", fontSize: "9.5px", color: "#9ca3af" }}>
+                          ✅ Peringatan terkirim — <button onClick={() => onKirimPeringatan(r.layer, r.jam.kode, r.kelas.kode, r.cell.g)} style={{ padding: 0, background: "none", border: "none", color: "#0369a1", fontSize: "9.5px", cursor: "pointer", textDecoration: "underline" }}>kirim lagi</button>
+                        </div>
+                      ) : (
+                        <button disabled={locked} onClick={() => onKirimPeringatan(r.layer, r.jam.kode, r.kelas.kode, r.cell.g)}
+                          style={{ marginTop: "4px", padding: "3px 8px", fontSize: "9.5px", fontWeight: 600, border: "none", borderRadius: "5px", cursor: locked ? "not-allowed" : "pointer", background: "#fef3c7", color: "#92400e" }}>
+                          ⚠️ Kirim Peringatan
+                        </button>
+                      )
+                    )}
                   </td>
                   <td style={{ padding: "8px 10px", minWidth: "180px", verticalAlign: "top" }}>
                     {editable ? (
@@ -4497,12 +4755,27 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
 // to a "Hadir" mark (a guru who came late is still "hadir"), while "Izin" carries an
 // optional free-text reason instead. Listed as a flat one-row-per-slot list (rather
 // than kelas-as-columns) so it scrolls vertically instead of sideways through 9+ kelas.
-function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, locked, tab }) {
+function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, ACCS, deviceTokens, setNotifikasi, locked, tab }) {
   const layer = user.layer;
   const iso = todayISO();
   const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
   const mapelByKode = useMemo(() => Object.fromEntries((JADWAL.mapel || []).map((m) => [m.kode, m])), [JADWAL.mapel]);
-  const { hari, rows } = useMemo(() => buildKehadiranDayRows(JADWAL, CL, iso, kehadiranGuru, layer, null), [JADWAL, CL, iso, kehadiranGuru, layer]);
+  const { hari, rows: rawRows } = useMemo(() => buildKehadiranDayRows(JADWAL, CL, iso, kehadiranGuru, layer, null), [JADWAL, CL, iso, kehadiranGuru, layer]);
+  // Re-render every 30s so a row's "Kirim Peringatan" button appears the moment it
+  // crosses the 10-menit threshold, without the TU needing to manually refresh the page.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
+  const rows = useMemo(
+    () => rawRows.map((r) => {
+      const startMin = jamStartMinutes(r.jam.waktu);
+      const peringatanEligible = !r.rec?.status && startMin != null && nowMinutesOfDay() - startMin >= 10;
+      return { ...r, peringatanEligible };
+    }),
+    [rawRows, tick] // eslint-disable-line
+  );
 
   const patchRecord = (rLayer, jamKode, kelasKode, patch) => {
     if (locked) return;
@@ -4527,6 +4800,21 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, lo
     const existing = kehadiranGuru?.[iso]?.[rLayer]?.[jamKode]?.[kelasKode] || null;
     if (existing?.status === status) { clearRecord(rLayer, jamKode, kelasKode); return; }
     patchRecord(rLayer, jamKode, kelasKode, { g: guruKode, status, keterangan: undefined, telat: undefined });
+  };
+  // TU warns a guru who's ~10 menit past class start with no status recorded yet — writes
+  // `peringatanAt` onto the (still-empty) record via patchRecord's existing spread-merge
+  // (App.jsx patchRecord above) so a later status pick isn't affected, logs a notifikasi
+  // entry, and best-effort pushes straight to that guru's own device(s).
+  const kirimPeringatan = (rLayer, jamKode, kelasKode, guruKode) => {
+    if (locked) return;
+    patchRecord(rLayer, jamKode, kelasKode, { peringatanAt: new Date().toISOString() });
+    const guru = guruByKode[guruKode];
+    const kelasLabel = rows.find((r) => r.layer === rLayer && r.jam.kode === jamKode && r.kelas.kode === kelasKode)?.kelas.label || kelasKode;
+    const pesan = `Anda belum tercatat hadir — ${kelasLabel} Jam ${jamKode}, mohon segera konfirmasi.`;
+    setNotifikasi((prev) => trimNotifikasi([...prev, makeNotifikasi({ dari: user.username, untukUsername: guru?.accsUser || null, tipe: "peringatan", pesan, kelas: kelasLabel, jam: jamKode })]));
+    if (guru?.accsUser) {
+      sendPushBestEffort(deviceTokens, [guru.accsUser], { title: "⚠️ Peringatan Kehadiran", body: pesan, data: { tipe: "peringatan" } }).catch(() => {});
+    }
   };
 
   return (
@@ -4553,7 +4841,7 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, lo
           ) : rows.length === 0 ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kelas {layer === "putra" ? "Putra" : "Putri"} di Susun Jadwal.</div>
           ) : (
-            <KehadiranSlotTable rows={rows} guruByKode={guruByKode} mapelByKode={mapelByKode} editable locked={locked} onSetStatus={setStatus} onPatchRecord={patchRecord} />
+            <KehadiranSlotTable rows={rows} guruByKode={guruByKode} mapelByKode={mapelByKode} editable locked={locked} onSetStatus={setStatus} onPatchRecord={patchRecord} onKirimPeringatan={kirimPeringatan} />
           )}
         </>
       )}
@@ -4960,10 +5248,22 @@ export default function App() {
   const [JADWAL, setJADWAL, jadwalReady] = useRemoteState("JADWAL", DEFAULT_JADWAL);
   const [archives, setArchives, archivesReady] = useRemoteState("archives", {});
   const [kehadiranGuru, setKehadiranGuru, kehadiranGuruReady] = useRemoteState("kehadiranGuru", {});
+  // FCM registration tokens per account, { [username]: [{ token, addedAt }, ...] } — a user
+  // can have several devices/browsers, so this is additive (dedup by token), never replaced
+  // wholesale. See requestPushPermission() near the Firebase helpers below.
+  const [deviceTokens, setDeviceTokens, deviceTokensReady] = useRemoteState("deviceTokens", {});
+  // In-app notification log (Guru↔TU izin/peringatan) — the reliable fallback/history
+  // that works over the same Supabase Realtime channel every other slice already uses,
+  // regardless of whether push permission was ever granted or a push actually delivered.
+  // Flat array, newest last; trimmed to TRIMMED_NOTIF_LIMIT on every write (see
+  // trimNotifikasi) since — unlike kehadiranGuru, which is naturally bounded per date —
+  // this has no natural key to prune by.
+  const [notifikasi, setNotifikasi, notifikasiReady] = useRemoteState("notifikasi", []);
   const [viewingArchive, setViewingArchive] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [navKey, setNavKey] = useState(""); // active Sidebar item; namespace differs per role, see buildNavGroups
   const [navGroupKey, setNavGroupKey] = useState(null); // which Sidebar group (if any) is currently drilled into
+  const [showLogin, setShowLogin] = useState(false); // false = show PublicRekapLanding first; true = show LoginPage
 
   // One-time self-healing migration: make sure a Super Admin account always exists,
   // even on deployments whose ACCS data predates this role.
@@ -5043,7 +5343,7 @@ export default function App() {
     if (changed) setKehadiranGuru(next);
   }, [kehadiranGuruReady, jadwalReady, clReady]); // eslint-disable-line
 
-  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady && kehadiranGuruReady)) {
+  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady && kehadiranGuruReady && deviceTokensReady && notifikasiReady)) {
     return <LoadingScreen />;
   }
 
@@ -5079,10 +5379,14 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", fontFamily: "system-ui,-apple-system,sans-serif", background: "#f9fafb" }}>
       {!user ? (
-        <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} SEM={SEM} LEMBAGA={LEMBAGA} />
+        showLogin ? (
+          <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} SEM={SEM} LEMBAGA={LEMBAGA} onBack={() => setShowLogin(false)} />
+        ) : (
+          <PublicRekapLanding JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} LEMBAGA={LEMBAGA} onMasuk={() => setShowLogin(true)} />
+        )
       ) : (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => setUser(null)} />
+          <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => { setUser(null); setShowLogin(false); }} notifikasi={notifikasi} setNotifikasi={setNotifikasi} />
           <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
             <Sidebar
               open={sidebarOpen}
@@ -5117,8 +5421,8 @@ export default function App() {
                   )}
                   {user.role === "guru" && !inJadwalSection && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
                   {user.role === "wk" && !inJadwalSection && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} setTab={setNavKey} />}
-                  {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} tab={effNavKey} />}
-                  {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
+                  {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} ACCS={ACCS} deviceTokens={deviceTokens} setNotifikasi={setNotifikasi} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
+                  {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} ACCS={ACCS} deviceTokens={deviceTokens} setNotifikasi={setNotifikasi} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
                 </>
               )}
             </div>
