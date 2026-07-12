@@ -4353,16 +4353,28 @@ const JAM_TINT = { I: "rgba(59,130,246,0.055)", II: "rgba(168,85,247,0.055)" };
 function buildKehadiranDayRows(JADWAL, CL, dateISO, kehadiranGuru, layerFilter, guruFilter) {
   const hari = hariForISO(dateISO);
   if (!hari) return { hari: null, rows: [] };
-  const putraKelas = jadwalPutraKelas(JADWAL);
   const putriKelas = jadwalPutriKelas(CL || {}, JADWAL);
+  // WS I B / WS II B are the same real classes as their Wustho-grouped Putri
+  // counterparts (see computeWustoPiMirror) — for Kehadiran Guru purposes they belong
+  // to Putri only, even though their schedule cells are still edited/stored under the
+  // Jadwal Putra grid's wsipi/wsiipi kode. So they're excluded from Putra's kelasList
+  // here, and read straight from JADWAL.grid (their real storage) under the mirrored
+  // Putri kelas kode instead — not from gridPutri, so this doesn't depend on the
+  // Wustho Pi reconciliation (see reconcileWustoPi) having already run/saved. If a
+  // class hasn't been mirrored yet (no matching Putri kelas configured), it falls back
+  // to showing under Putra as before rather than disappearing.
+  const mirror = computeWustoPiMirror(putriKelas);
+  const putraKelas = jadwalPutraKelas(JADWAL).filter((k) => !mirror.putraToPutri[k.kode]);
   const layers = layerFilter ? [layerFilter] : ["putra", "putri"];
   const rows = [];
   layers.forEach((layer) => {
     const kelasList = layer === "putra" ? putraKelas : putriKelas;
-    const grid = layer === "putra" ? JADWAL.grid : JADWAL.gridPutri;
     JADWAL_JAM.forEach((jam) => {
       kelasList.forEach((k) => {
-        const cell = grid?.[hari]?.[jam.kode]?.[k.kode];
+        const mirroredPutraKode = layer === "putri" ? mirror.putriToPutra[k.kode] : null;
+        const grid = mirroredPutraKode ? JADWAL.grid : (layer === "putra" ? JADWAL.grid : JADWAL.gridPutri);
+        const gridKode = mirroredPutraKode || k.kode;
+        const cell = grid?.[hari]?.[jam.kode]?.[gridKode];
         if (!cell?.g) return;
         if (guruFilter && cell.g !== guruFilter) return;
         const rec = kehadiranGuru?.[dateISO]?.[layer]?.[jam.kode]?.[k.kode] || null;
@@ -4989,6 +5001,47 @@ export default function App() {
       return next;
     });
   }, [accsReady]); // eslint-disable-line
+
+  // One-time migration: WS I B / WS II B attendance was previously recorded under
+  // layer "putra" (kelas kode "wsipi"/"wsiipi") since that's where their schedule
+  // cells live — but Kehadiran Guru now treats them as Putri-only (see
+  // buildKehadiranDayRows), so any pre-existing records need to move to layer "putri"
+  // under the matching real Putri kelas kode, or past attendance/recap history for
+  // those two slots would silently disappear instead of just moving tabs. Only moves
+  // a slot once its Putri mirror actually exists (computeWustoPiMirror) — otherwise
+  // leaves it under Putra untouched, matching buildKehadiranDayRows's own fallback.
+  useEffect(() => {
+    if (!kehadiranGuruReady || !jadwalReady || !clReady) return;
+    const mirror = computeWustoPiMirror(jadwalPutriKelas(CL || {}, JADWAL));
+    const WUSTHO_PI_KODE = ["wsipi", "wsiipi"];
+    if (!WUSTHO_PI_KODE.some((kk) => mirror.putraToPutri[kk])) return;
+    let changed = false;
+    const next = {};
+    Object.entries(kehadiranGuru || {}).forEach(([dateISO, day]) => {
+      const putraDay = day?.putra || {};
+      const newPutra = {};
+      const putriAdd = {};
+      Object.entries(putraDay).forEach(([jamKode, jamData]) => {
+        const jd = { ...(jamData || {}) };
+        WUSTHO_PI_KODE.forEach((kk) => {
+          const putriKode = mirror.putraToPutri[kk];
+          if (jd[kk] && putriKode) {
+            putriAdd[jamKode] = { ...(putriAdd[jamKode] || {}), [putriKode]: jd[kk] };
+            delete jd[kk];
+            changed = true;
+          }
+        });
+        newPutra[jamKode] = jd;
+      });
+      if (Object.keys(putriAdd).length === 0) { next[dateISO] = day; return; }
+      const newPutri = { ...(day.putri || {}) };
+      Object.entries(putriAdd).forEach(([jamKode, kelasData]) => {
+        newPutri[jamKode] = { ...(newPutri[jamKode] || {}), ...kelasData };
+      });
+      next[dateISO] = { ...day, putra: newPutra, putri: newPutri };
+    });
+    if (changed) setKehadiranGuru(next);
+  }, [kehadiranGuruReady, jadwalReady, clReady]); // eslint-disable-line
 
   if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady && kehadiranGuruReady)) {
     return <LoadingScreen />;
