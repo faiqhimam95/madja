@@ -1220,7 +1220,14 @@ function NotifBell({ notifikasi, user, onOpen }) {
 // of Sidebar state: branding + the Sidebar show/hide toggle on the left, account owner +
 // Keluar on the right. Deliberately minimal (no nav, no Akun/Arsip) per explicit request;
 // everything else lives in the collapsible Sidebar below it.
-function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifikasi, setNotifikasi, deviceTokens, setDeviceTokens }) {
+// forwardRef so App() can measure this element's real rendered height (for Sidebar's
+// sticky top offset, see Sidebar's own comment) WITHOUT wrapping it in an extra plain
+// div — a sticky element can only stay pinned while scrolling *within its own parent's
+// box*, so wrapping it in a small div (only as tall as Header itself) would silently
+// break its stickiness the instant that tiny wrapper scrolls past the viewport, since
+// Header's original parent (the full-page-height column flex in App()) is what gave it
+// room to stay pinned across the whole page's scroll range in the first place.
+const Header = React.forwardRef(function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifikasi, setNotifikasi, deviceTokens, setDeviceTokens }, ref) {
   const markAllRead = () => {
     if (!notifikasi || !notifikasi.some((n) => !n.dibaca && (n.untukUsername === user.username || n.untukLayer === user.layer))) return;
     setNotifikasi((prev) => prev.map((n) => ((n.untukUsername === user.username || n.untukLayer === user.layer) ? { ...n, dibaca: true } : n)));
@@ -1238,7 +1245,7 @@ function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifik
     setNotifPerm(ok ? "granted" : (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
   };
   return (
-    <div style={{ position: "sticky", top: 0, zIndex: 60, background: THEME.green[900], color: "white", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, boxShadow: THEME.shadow.raised }}>
+    <div ref={ref} style={{ position: "sticky", top: 0, zIndex: 60, background: THEME.green[900], color: "white", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, boxShadow: THEME.shadow.raised }}>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
         <button onClick={onToggleSidebar} title={sidebarOpen ? "Sembunyikan menu" : "Tampilkan menu"} className="btn-hover" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: THEME.radius.sm, padding: "6px 10px", cursor: "pointer", fontSize: "14px", flexShrink: 0 }}>{sidebarOpen ? "✕" : "☰"}</button>
         {LEMBAGA.logo && <img src={LEMBAGA.logo} alt="Logo" style={{ width: "24px", height: "24px", objectFit: "contain", flexShrink: 0 }} />}
@@ -1254,7 +1261,7 @@ function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifik
       </div>
     </div>
   );
-}
+});
 
 // Renders nothing at all when closed (per explicit request — no leftover collapsed rail,
 // content goes truly full-width; reopening happens from Header's ☰ toggle instead).
@@ -5525,9 +5532,7 @@ export default function App() {
         )
       ) : (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          <div ref={headerRef}>
-            <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => { setUser(null); setShowLogin(false); }} notifikasi={notifikasi} setNotifikasi={setNotifikasi} deviceTokens={deviceTokens} setDeviceTokens={setDeviceTokens} />
-          </div>
+          <Header ref={headerRef} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => { setUser(null); setShowLogin(false); }} notifikasi={notifikasi} setNotifikasi={setNotifikasi} deviceTokens={deviceTokens} setDeviceTokens={setDeviceTokens} />
           <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
             <Sidebar
               open={sidebarOpen}
