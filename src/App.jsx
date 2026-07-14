@@ -1898,6 +1898,7 @@ function AdminKelas({ CL, setCL, ST, setST, GM, setGM, setACCS, setAllG, setAllK
       )}
 
       <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
             <tr style={{ background: "#f9fafb" }}>
@@ -1925,6 +1926,7 @@ function AdminKelas({ CL, setCL, ST, setST, GM, setGM, setACCS, setAllG, setAllK
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -2100,6 +2102,7 @@ function AdminWali({ ACCS, setACCS, CL, setCL, GM, setGM }) {
       )}
 
       <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
             <tr style={{ background: "#f9fafb" }}>
@@ -2134,6 +2137,7 @@ function AdminWali({ ACCS, setACCS, CL, setCL, GM, setGM }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -2553,6 +2557,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
             </div>
           )}
 
+          <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
@@ -2579,6 +2584,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     );
@@ -2640,6 +2646,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
         <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada akun guru/wali kelas. Tambahkan dulu.</div>
       ) : (
         <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
@@ -2676,6 +2683,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
@@ -3246,7 +3254,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
 
       {tab === "jadwal-master" && (
         <>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "14px" }}>
           <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
             <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "13px", fontWeight: 500 }}>Kode Guru — {JADWAL.guru.length}</span>
@@ -3262,6 +3270,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
                 <GreenBtn onClick={addGuru} style={{ padding: "7px 12px", fontSize: "12px" }}>+ Tambah</GreenBtn>
               </div>
             </div>
+            <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
               <tbody>
                 {JADWAL.guru.map((g, i) => (
@@ -3286,6 +3295,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
                 {JADWAL.guru.length === 0 && <tr><td colSpan={4} style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada guru.</td></tr>}
               </tbody>
             </table>
+            </div>
           </div>
 
           <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
@@ -3297,6 +3307,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
                 <GreenBtn onClick={addMapel} style={{ padding: "7px 12px", fontSize: "12px" }}>+ Tambah</GreenBtn>
               </div>
             </div>
+            <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
               <tbody>
                 {JADWAL.mapel.map((m, i) => (
@@ -3315,6 +3326,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
                 {JADWAL.mapel.length === 0 && <tr><td colSpan={3} style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada mata pelajaran.</td></tr>}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
 
@@ -3358,6 +3370,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
         <>
           <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Daftar guru berikut sama dengan daftar di tab "Guru & Mapel". Atur kelas yang boleh diampu dan hari/jam ketersediaan tiap guru — dipakai untuk mendeteksi bentrok jadwal otomatis di tab "Jadwal".</p>
           <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+            <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
               <thead>
                 <tr style={{ background: "#f9fafb" }}>
@@ -3431,6 +3444,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
                 {JADWAL.guru.length === 0 && <tr><td colSpan={4} style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada guru. Tambahkan di tab "Guru & Mapel".</td></tr>}
               </tbody>
             </table>
+            </div>
           </div>
         </>
       )}
@@ -4221,6 +4235,7 @@ function JadwalPribadiTab({ myGuru, rows }) {
   return (
     <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
       <div style={{ padding: "10px 14px", background: "#064e3b", color: "white", fontSize: "13px", fontWeight: 500 }}>Jadwal Mengajar — {myGuru.nama} ({myGuru.kode})</div>
+      <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
         <thead>
           <tr style={{ background: "#f9fafb" }}>
@@ -4241,6 +4256,7 @@ function JadwalPribadiTab({ myGuru, rows }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -5011,6 +5027,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
         </div>
       ) : (
         <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
@@ -5024,11 +5041,12 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
                 <tr key={r.kode} style={{ borderBottom: "1px solid #f3f4f6" }}>
                   <td style={{ padding: "8px 12px", fontWeight: 500, whiteSpace: "nowrap", verticalAlign: "top" }}>{r.nama}</td>
                   <td style={{ padding: "10px 12px", minWidth: "260px" }}><KehadiranBarChart counts={r.c} /></td>
-                  <td style={{ padding: "8px 12px", verticalAlign: "top", color: r.c.telat > 0 ? "#92400e" : "#d1d5db" }}>{r.c.telat > 0 ? `${r.c.telat} menit` : "-"}</td>
+                  <td style={{ padding: "8px 12px", verticalAlign: "top", color: r.c.telat > 0 ? "#92400e" : "#d1d5db", whiteSpace: "nowrap" }}>{r.c.telat > 0 ? `${r.c.telat} menit` : "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
@@ -5276,7 +5294,17 @@ export default function App() {
   // this has no natural key to prune by.
   const [notifikasi, setNotifikasi, notifikasiReady] = useRemoteState("notifikasi", []);
   const [viewingArchive, setViewingArchive] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // On a phone-width screen, Sidebar's fixed 250px squeezes content into a sliver (tables/
+  // buttons cut off with no way to reach the rest) — so it starts closed there instead of
+  // open like on desktop/tablet, and auto-closes again after picking a menu item/group
+  // (see onSelect/onSelectGroup below) so browsing a page never stays squeezed.
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
   const [navKey, setNavKey] = useState(""); // active Sidebar item; namespace differs per role, see buildNavGroups
   const [navGroupKey, setNavGroupKey] = useState(null); // which Sidebar group (if any) is currently drilled into
   const [showLogin, setShowLogin] = useState(false); // false = show PublicRekapLanding first; true = show LoginPage
@@ -5414,8 +5442,9 @@ export default function App() {
                 setNavGroupKey(gk);
                 if (grp) setNavKey(grp.items[0].key);
                 setViewingArchive(false);
+                if (isMobile) setSidebarOpen(false);
               }}
-              activeKey={effNavKey} onSelect={(k) => { setNavKey(k); setViewingArchive(false); }}
+              activeKey={effNavKey} onSelect={(k) => { setNavKey(k); setViewingArchive(false); if (isMobile) setSidebarOpen(false); }}
             />
             <div style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
               {viewingArchive ? (
