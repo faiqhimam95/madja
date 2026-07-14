@@ -1,0 +1,56 @@
+/* Companion stylesheet for interaction states inline styles structurally cannot
+   express (:hover, :focus, :active) — everything else (color/radius/shadow values)
+   stays as the THEME JS object in App.jsx, referenced from inline styles as before.
+   Kept intentionally small: utility classes only, no component-specific rules. */
+
+:root {
+  --green-950: #043327;
+  --green-900: #064e3b;
+  --green-700: #065f46;
+  --green-600: #047857;
+  --green-500: #059669;
+  --green-200: #a7f3d0;
+  --green-100: #d1fae5;
+  --green-50: #ecfdf5;
+}
+
+.btn-hover {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.btn-hover:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+.btn-hover:active {
+  transform: translateY(0);
+  filter: brightness(0.97);
+}
+
+.card-hover {
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 4px 12px rgba(6, 78, 59, 0.12);
+}
+
+.nav-item {
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.chart-seg-hover {
+  transition: filter 0.15s ease;
+}
+.chart-seg-hover:hover {
+  filter: brightness(1.12);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--green-500);
+  outline-offset: 1px;
+}

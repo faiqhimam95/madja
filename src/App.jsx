@@ -991,11 +991,31 @@ const isGuruAcc = (a, GM) => (GM[a.u] || []).length > 0;
 // activateSemester on every non-admin account) locks data entry until Admin re-confirms.
 const isAccConfirmed = (a) => a?.confirmed !== false;
 
+// Design tokens — color/radius/shadow/transition VALUES referenced from inline
+// styles throughout the app (this file has zero CSS otherwise, everything is
+// inline `style={{}}`; genuine :hover/:focus states live in the small companion
+// src/theme.css instead, since inline styles can't express pseudo-classes at
+// all). #064e3b (green.900) is the brand anchor and never changes — the rest of
+// the ramp/scales formalize values that were previously ad-hoc/inconsistent
+// (11 different borderRadius pixel values, near-zero boxShadow, zero
+// transitions anywhere in the file).
+const THEME = {
+  green: { 950: "#043327", 900: "#064e3b", 700: "#065f46", 600: "#047857", 500: "#059669", 200: "#a7f3d0", 100: "#d1fae5", 50: "#ecfdf5" },
+  radius: { sm: "8px", md: "12px", lg: "16px", pill: "999px" },
+  shadow: {
+    card: "0 1px 2px rgba(6,78,59,0.06), 0 1px 3px rgba(6,78,59,0.08)",
+    raised: "0 4px 12px rgba(6,78,59,0.12)",
+    popover: "0 8px 28px rgba(6,78,59,0.18)",
+  },
+  transition: "all 0.15s ease",
+};
+
 function GreenBtn({ onClick, children, style = {} }) {
   return (
     <button
       onClick={onClick}
-      style={{ padding: "9px 20px", background: "linear-gradient(135deg,#065f46,#047857)", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer", ...style }}
+      className="btn-hover"
+      style={{ padding: "9px 20px", background: `linear-gradient(135deg,${THEME.green[700]},${THEME.green[600]})`, color: "white", border: "none", borderRadius: THEME.radius.sm, fontSize: "13px", fontWeight: 500, cursor: "pointer", ...style }}
     >
       {children}
     </button>
@@ -1006,14 +1026,15 @@ function RedBtn({ onClick, children, style = {} }) {
   return (
     <button
       onClick={onClick}
-      style={{ padding: "7px 14px", background: "linear-gradient(135deg,#b91c1c,#dc2626)", color: "white", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", ...style }}
+      className="btn-hover"
+      style={{ padding: "7px 14px", background: "linear-gradient(135deg,#b91c1c,#dc2626)", color: "white", border: "none", borderRadius: THEME.radius.sm, fontSize: "12px", fontWeight: 500, cursor: "pointer", ...style }}
     >
       {children}
     </button>
   );
 }
 
-const inputA = { width: "100%", padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "13px", boxSizing: "border-box" };
+const inputA = { width: "100%", padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: THEME.radius.sm, fontSize: "13px", boxSizing: "border-box", transition: "border-color 0.15s ease" };
 const labelA = { display: "block", fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "5px" };
 
 // First thing anyone sees on opening the app while logged out — a public, read-only
@@ -1167,18 +1188,18 @@ function NotifBell({ notifikasi, user, onOpen }) {
   if (!user || (user.role !== "tu" && user.role !== "guru" && user.role !== "wk")) return null;
   return (
     <div style={{ position: "relative" }}>
-      <button onClick={() => setOpen((o) => { const next = !o; if (next) onOpen?.(); return next; })} title="Notifikasi" style={{ position: "relative", background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "14px" }}>
+      <button onClick={() => setOpen((o) => { const next = !o; if (next) onOpen?.(); return next; })} title="Notifikasi" className="btn-hover" style={{ position: "relative", background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: THEME.radius.sm, padding: "6px 10px", cursor: "pointer", fontSize: "14px" }}>
         🔔
-        {unread > 0 && <span style={{ position: "absolute", top: "-4px", right: "-4px", background: "#dc2626", color: "white", borderRadius: "9px", fontSize: "9px", fontWeight: 700, padding: "1px 5px", minWidth: "14px", textAlign: "center" }}>{unread}</span>}
+        {unread > 0 && <span style={{ position: "absolute", top: "-4px", right: "-4px", background: "#dc2626", color: "white", borderRadius: THEME.radius.pill, fontSize: "9px", fontWeight: 700, padding: "1px 5px", minWidth: "14px", textAlign: "center" }}>{unread}</span>}
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: "6px", width: "300px", maxHeight: "360px", overflowY: "auto", background: "white", color: "#111827", borderRadius: "10px", boxShadow: "0 4px 20px rgba(0,0,0,0.25)", zIndex: 100 }}>
+        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: "6px", width: "300px", maxHeight: "360px", overflowY: "auto", background: "white", color: "#111827", borderRadius: THEME.radius.md, boxShadow: THEME.shadow.popover, zIndex: 100 }}>
           <div style={{ padding: "10px 12px", fontSize: "12px", fontWeight: 600, borderBottom: "1px solid #f3f4f6" }}>Notifikasi</div>
           {mine.length === 0 ? (
             <div style={{ padding: "20px", textAlign: "center", color: "#9ca3af", fontSize: "11.5px" }}>Belum ada notifikasi.</div>
           ) : (
             mine.slice(0, 30).map((n) => (
-              <div key={n.id} style={{ padding: "9px 12px", borderBottom: "1px solid #f9fafb", fontSize: "11.5px", background: n.dibaca ? "white" : "#f0fdf4" }}>
+              <div key={n.id} style={{ padding: "9px 12px", borderBottom: "1px solid #f9fafb", fontSize: "11.5px", background: n.dibaca ? "white" : THEME.green[50] }}>
                 <div style={{ fontWeight: 600, color: n.tipe === "izin" ? "#1e40af" : "#92400e", marginBottom: "2px" }}>{n.tipe === "izin" ? "📨 Izin" : "⚠️ Peringatan"}</div>
                 <div style={{ color: "#374151" }}>{n.pesan}</div>
                 <div style={{ color: "#9ca3af", fontSize: "10px", marginTop: "3px" }}>{new Date(n.waktu).toLocaleString("id-ID")}</div>
@@ -1217,19 +1238,19 @@ function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifik
     setNotifPerm(ok ? "granted" : (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
   };
   return (
-    <div style={{ position: "sticky", top: 0, zIndex: 60, background: "#064e3b", color: "white", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+    <div style={{ position: "sticky", top: 0, zIndex: 60, background: THEME.green[900], color: "white", padding: "9px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, boxShadow: THEME.shadow.raised }}>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
-        <button onClick={onToggleSidebar} title={sidebarOpen ? "Sembunyikan menu" : "Tampilkan menu"} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "14px", flexShrink: 0 }}>{sidebarOpen ? "✕" : "☰"}</button>
+        <button onClick={onToggleSidebar} title={sidebarOpen ? "Sembunyikan menu" : "Tampilkan menu"} className="btn-hover" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: THEME.radius.sm, padding: "6px 10px", cursor: "pointer", fontSize: "14px", flexShrink: 0 }}>{sidebarOpen ? "✕" : "☰"}</button>
         {LEMBAGA.logo && <img src={LEMBAGA.logo} alt="Logo" style={{ width: "24px", height: "24px", objectFit: "contain", flexShrink: 0 }} />}
         <span style={{ fontSize: "14px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{LEMBAGA.logo ? "" : "🕌 "}{LEMBAGA.namaSingkat}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
         {wantsPush && notifPerm === "default" && (
-          <button onClick={enablePush} title="Aktifkan notifikasi push di perangkat ini" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "11px", fontWeight: 500 }}>🔔 Aktifkan</button>
+          <button onClick={enablePush} title="Aktifkan notifikasi push di perangkat ini" className="btn-hover" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: THEME.radius.sm, padding: "6px 10px", cursor: "pointer", fontSize: "11px", fontWeight: 500 }}>🔔 Aktifkan</button>
         )}
         <NotifBell notifikasi={notifikasi} user={user} onOpen={markAllRead} />
         <span style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</span>
-        <button onClick={onLogout} style={{ padding: "6px 12px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>Keluar</button>
+        <button onClick={onLogout} className="btn-hover" style={{ padding: "6px 12px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: THEME.radius.sm, fontSize: "12px", cursor: "pointer" }}>Keluar</button>
       </div>
     </div>
   );
@@ -1241,7 +1262,7 @@ function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifik
 // folder — picking a group swaps which group's items show below it and immediately
 // navigates to that group's first item. Standalone items (not part of any group) still
 // render as plain buttons above the dropdown.
-function Sidebar({ open, user, ACCS, setACCS, GM, setGM, setUser, CL, archives, onOpenArchive, navSections, groupKey, onSelectGroup, activeKey, onSelect }) {
+function Sidebar({ open, topOffset = 48, user, ACCS, setACCS, GM, setGM, setUser, CL, archives, onOpenArchive, navSections, groupKey, onSelectGroup, activeKey, onSelect }) {
   const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309", tu: "#0d9488" };
   const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel", tu: "Tata Usaha" };
   const [showAcct, setShowAcct] = useState(false);
@@ -1275,13 +1296,13 @@ function Sidebar({ open, user, ACCS, setACCS, GM, setGM, setUser, CL, archives, 
 
   if (!open) return null;
 
-  const navBtnStyle = (active) => ({ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", borderRadius: "7px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", marginBottom: "2px", background: active ? "rgba(255,255,255,0.18)" : "transparent", color: "white" });
+  const navBtnStyle = (active) => ({ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", borderRadius: THEME.radius.sm, fontSize: "12.5px", fontWeight: 500, cursor: "pointer", marginBottom: "2px", background: active ? "rgba(255,255,255,0.18)" : "transparent", color: "white" });
   const standaloneItems = navSections.filter((s) => s.type === "item");
   const groups = navSections.filter((s) => s.type === "group");
   const activeGroup = groups.find((g) => g.key === groupKey) || groups[0] || null;
 
   return (
-    <div style={{ width: "250px", flexShrink: 0, background: "#064e3b", color: "white", minHeight: "100%", display: "flex", flexDirection: "column" }}>
+    <div style={{ width: "250px", flexShrink: 0, background: THEME.green[900], color: "white", display: "flex", flexDirection: "column", position: "sticky", top: topOffset, alignSelf: "flex-start", maxHeight: `calc(100vh - ${topOffset}px)`, overflowY: "auto", boxShadow: THEME.shadow.raised }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
         <div style={{ display: "inline-block", background: rl[user.role], padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 500 }}>
           {rn[user.role]}{user.role === "wk" && user.kelas ? " — " + CL[user.kelas]?.sh : ""}{user.role === "tu" ? " — " + (user.layer === "putra" ? "Putra" : "Putri") : ""}
@@ -1313,13 +1334,13 @@ function Sidebar({ open, user, ACCS, setACCS, GM, setGM, setUser, CL, archives, 
 
       <div style={{ flex: 1, overflowY: "auto", padding: "10px" }}>
         {standaloneItems.map((s) => (
-          <button key={s.key} onClick={() => onSelect(s.key)} style={navBtnStyle(activeKey === s.key)}>{s.icon} {s.label}</button>
+          <button key={s.key} onClick={() => onSelect(s.key)} className="nav-item" style={navBtnStyle(activeKey === s.key)}>{s.icon} {s.label}</button>
         ))}
         {groups.length > 0 && (
           <div style={{ marginTop: standaloneItems.length ? "10px" : 0 }}>
             {groups.length > 1 ? (
               <select value={activeGroup?.key || ""} onChange={(e) => onSelectGroup(e.target.value)}
-                style={{ width: "100%", padding: "7px 8px", borderRadius: "6px", border: "none", fontSize: "11.5px", fontWeight: 600 }}>
+                style={{ width: "100%", padding: "7px 8px", borderRadius: THEME.radius.sm, border: "none", fontSize: "11.5px", fontWeight: 600 }}>
                 {groups.map((g) => <option key={g.key} value={g.key}>{g.icon} {g.label}</option>)}
               </select>
             ) : (
@@ -1327,7 +1348,7 @@ function Sidebar({ open, user, ACCS, setACCS, GM, setGM, setUser, CL, archives, 
             )}
             <div style={{ marginTop: "6px" }}>
               {(activeGroup?.items || []).map((item) => (
-                <button key={item.key} onClick={() => onSelect(item.key)} style={navBtnStyle(activeKey === item.key)}>{item.icon} {item.label}</button>
+                <button key={item.key} onClick={() => onSelect(item.key)} className="nav-item" style={navBtnStyle(activeKey === item.key)}>{item.icon} {item.label}</button>
               ))}
             </div>
           </div>
@@ -1336,12 +1357,12 @@ function Sidebar({ open, user, ACCS, setACCS, GM, setGM, setUser, CL, archives, 
 
       <div style={{ padding: "10px", borderTop: "1px solid rgba(255,255,255,0.12)", position: "relative" }}>
         {archives && Object.keys(archives).length > 0 && (
-          <button onClick={onOpenArchive} style={navBtnStyle(false)}>🗄️ Arsip</button>
+          <button onClick={onOpenArchive} className="nav-item" style={navBtnStyle(false)}>🗄️ Arsip</button>
         )}
-        <button onClick={openAcct} style={navBtnStyle(false)}>⚙️ Akun</button>
+        <button onClick={openAcct} className="nav-item" style={navBtnStyle(false)}>⚙️ Akun</button>
 
         {showAcct && (
-          <div style={{ position: "absolute", bottom: "100%", left: "10px", right: "10px", background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", boxShadow: "0 4px 20px rgba(0,0,0,0.25)", marginBottom: "8px", zIndex: 100 }}>
+          <div style={{ position: "absolute", bottom: "100%", left: "10px", right: "10px", background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "16px", boxShadow: THEME.shadow.popover, marginBottom: "8px", zIndex: 100 }}>
             <div style={{ fontSize: "13px", fontWeight: 500, color: "#111827", marginBottom: "12px" }}>⚙️ Edit Akun Saya</div>
             <div style={{ marginBottom: "8px" }}>
               <label style={labelA}>Username</label>
@@ -4532,8 +4553,14 @@ const KEHADIRAN_STATUS = [
   { kode: "H", label: "Hadir", bg: "#d1fae5", fg: "#065f46" },
   { kode: "S", label: "Sakit", bg: "#fef3c7", fg: "#92400e" },
   { kode: "I", label: "Izin", bg: "#dbeafe", fg: "#1e40af" },
-  { kode: "A", label: "Alpa", bg: "#fee2e2", fg: "#991b1b" },
+  { kode: "A", label: "Tanpa Keterangan", bg: "#fee2e2", fg: "#991b1b" },
 ];
+// Solid mark colors for KehadiranBarChart's stacked-bar segments (validated via the
+// dataviz skill's validate_palette.js — CVD-safe adjacent pairs, lightness/chroma
+// checks all pass) — a distinct, more saturated set from KEHADIRAN_STATUS's own
+// bg/fg badge-tint pairs above, since a solid chart fill and a light text badge are
+// different visual jobs. Same H/S/I/A key order as KEHADIRAN_STATUS.
+const KEHADIRAN_CHART_HUE = { H: "#008300", S: "#eda100", I: "#2a78d6", A: "#e34948" };
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -4919,7 +4946,7 @@ function buildKehadiranGuruExcel(JADWAL, kehadiranGuru, LEMBAGA = DEFAULT_LEMBAG
     [`${LEMBAGA.namaLembaga} ${LEMBAGA.namaPondok}`, ...Array(NC - 1).fill("")],
     [`REKAPITULASI KEHADIRAN GURU — Semester ${semLabel(SEM)}`, ...Array(NC - 1).fill("")],
     Array(NC).fill(""),
-    ["Kode", "Nama Guru", "Hadir", "Sakit", "Izin", "Alpa", "Total Tercatat", "Menit Terlambat"],
+    ["Kode", "Nama Guru", "Hadir", "Sakit", "Izin", "Tanpa Keterangan", "Total Tercatat", "Menit Terlambat"],
     ...rows,
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -4929,25 +4956,46 @@ function buildKehadiranGuruExcel(JADWAL, kehadiranGuru, LEMBAGA = DEFAULT_LEMBAG
   return wb;
 }
 
-// Simple horizontal percentage bar chart for one guru's (or one aggregated group's)
-// H/S/I/A distribution — shared by the TU/Admin/guru-personal recap panels below.
-function KehadiranBarChart({ counts }) {
+// One 100%-stacked horizontal bar for one guru's (or one aggregated group's) H/S/I/A
+// distribution — replaces the old 4-separate-mini-bars layout (each status its own
+// full-width row) with a single compact composition bar, per explicit user request
+// after reviewing an Artifact preview. Segments use KEHADIRAN_CHART_HUE (validated
+// via the dataviz skill's palette validator — CVD-safe, distinct from the lighter
+// KEHADIRAN_STATUS badge tints used elsewhere), a 2px surface gap between segments,
+// and a native `title` tooltip per segment carrying the exact count/percentage so
+// data stays readable without hover — the caller (KehadiranRecapPanel) renders the
+// legend once and a headline "% hadir" figure beside/below the bar, not repeated
+// per row like the old per-status labels were.
+function KehadiranBarChart({ counts, height = "16px" }) {
   const total = counts.H + counts.S + counts.I + counts.A;
+  const segments = KEHADIRAN_STATUS.filter((s) => (counts[s.kode] || 0) > 0);
   return (
-    <div>
-      {KEHADIRAN_STATUS.map((s) => {
+    <div style={{ display: "flex", height, borderRadius: THEME.radius.pill, overflow: "hidden", background: "#eef0ec" }}>
+      {total === 0 && <div style={{ width: "100%" }} />}
+      {segments.map((s, i) => {
         const n = counts[s.kode] || 0;
-        const pct = total > 0 ? Math.round((n / total) * 100) : 0;
+        const pct = total > 0 ? (n / total) * 100 : 0;
         return (
-          <div key={s.kode} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-            <span style={{ width: "44px", fontSize: "11px", color: "#6b7280", flexShrink: 0 }}>{s.label}</span>
-            <div style={{ flex: 1, minWidth: "60px", background: "#f3f4f6", borderRadius: "4px", overflow: "hidden", height: "13px" }}>
-              <div style={{ width: `${pct}%`, background: s.fg, height: "100%" }} />
-            </div>
-            <span style={{ width: "76px", fontSize: "11px", color: "#374151", textAlign: "right", flexShrink: 0 }}>{pct}% ({n})</span>
-          </div>
+          <div key={s.kode} title={`${s.label} — ${n} (${Math.round(pct)}%)`} className="chart-seg-hover"
+            style={{ width: `${pct}%`, background: KEHADIRAN_CHART_HUE[s.kode], marginLeft: i === 0 ? 0 : "2px" }} />
         );
       })}
+    </div>
+  );
+}
+
+// Legend for KehadiranBarChart's segment colors — rendered ONCE by the caller above
+// a list of bars (not repeated per row, unlike the old design), per the mark-anatomy
+// rule that identity must never rely on color alone.
+function KehadiranLegend() {
+  return (
+    <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", padding: "10px 16px", borderBottom: "1px solid #e5e7eb", fontSize: "11.5px", color: "#52584f" }}>
+      {KEHADIRAN_STATUS.map((s) => (
+        <span key={s.kode} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ width: "10px", height: "10px", borderRadius: "3px", background: KEHADIRAN_CHART_HUE[s.kode], flexShrink: 0 }} />
+          {s.label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -5021,29 +5069,58 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
       ) : totalRecords === 0 ? (
         <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kehadiran tercatat pada periode ini.</div>
       ) : scopeGuruKode ? (
-        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", padding: "16px", maxWidth: "420px" }}>
-          <KehadiranBarChart counts={rows[0].c} />
-          {rows[0].c.telat > 0 && <div style={{ marginTop: "10px", fontSize: "12px", color: "#92400e" }}>⏱️ Total terlambat: <strong>{rows[0].c.telat} menit</strong></div>}
+        <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", boxShadow: THEME.shadow.card, overflow: "hidden" }} className="card-hover">
+          <KehadiranLegend />
+          <div style={{ padding: "16px" }}>
+            <KehadiranBarChart counts={rows[0].c} height="22px" />
+            <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "2px" }}>
+              {KEHADIRAN_STATUS.map((s) => {
+                const n = rows[0].c[s.kode] || 0;
+                const total = rows[0].c.H + rows[0].c.S + rows[0].c.I + rows[0].c.A;
+                const pct = total > 0 ? Math.round((n / total) * 100) : 0;
+                return (
+                  <div key={s.kode} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f3f4f6", fontSize: "12.5px" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: "8px", color: "#52584f" }}>
+                      <span style={{ width: "10px", height: "10px", borderRadius: "3px", background: KEHADIRAN_CHART_HUE[s.kode] }} />
+                      {s.label}
+                    </span>
+                    <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{n} ({pct}%)</span>
+                  </div>
+                );
+              })}
+            </div>
+            {rows[0].c.telat > 0 && <div style={{ marginTop: "12px", padding: "10px 12px", background: THEME.green[50], borderRadius: THEME.radius.sm, fontSize: "12px", color: "#92400e" }}>⏱️ Total terlambat: <strong>{rows[0].c.telat} menit</strong></div>}
+          </div>
         </div>
       ) : (
-        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+        <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", boxShadow: THEME.shadow.card, overflow: "hidden" }}>
+          <KehadiranLegend />
           <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
-                {["Guru", "Persentase Kehadiran", "Menit Terlambat"].map((h) => (
+                {["Guru", "Kehadiran", "Menit Terlambat"].map((h) => (
                   <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.kode} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                  <td style={{ padding: "8px 12px", fontWeight: 500, whiteSpace: "nowrap", verticalAlign: "top" }}>{r.nama}</td>
-                  <td style={{ padding: "10px 12px", minWidth: "260px" }}><KehadiranBarChart counts={r.c} /></td>
-                  <td style={{ padding: "8px 12px", verticalAlign: "top", color: r.c.telat > 0 ? "#92400e" : "#d1d5db", whiteSpace: "nowrap" }}>{r.c.telat > 0 ? `${r.c.telat} menit` : "-"}</td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const total = r.c.H + r.c.S + r.c.I + r.c.A;
+                const pctH = total > 0 ? Math.round((r.c.H / total) * 100) : 0;
+                return (
+                  <tr key={r.kode} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <td style={{ padding: "10px 12px", fontWeight: 500, whiteSpace: "nowrap", verticalAlign: "middle" }}>{r.nama}</td>
+                    <td style={{ padding: "10px 12px", minWidth: "180px", verticalAlign: "middle" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div style={{ flex: 1, minWidth: "80px" }}><KehadiranBarChart counts={r.c} /></div>
+                        <span style={{ fontSize: "11.5px", color: "#52584f", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><strong style={{ color: "#065f46" }}>{pctH}%</strong> · {total} tercatat</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px 12px", verticalAlign: "middle", color: r.c.telat > 0 ? "#92400e" : "#d1d5db", whiteSpace: "nowrap" }}>{r.c.telat > 0 ? `${r.c.telat} menit` : "-"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           </div>
@@ -5305,6 +5382,24 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
+  // Sidebar pins itself with `position: sticky` (see Sidebar's own comment) instead of
+  // relying on a min-height-100%-through-nested-flex chain to keep it visible while the
+  // page scrolls — that chain silently breaks on some mobile/WebView engines (the row
+  // never actually constrains height, so the content area's overflowY:auto never kicks
+  // in and the whole document scrolls instead), which stretched Sidebar's tall colored
+  // background far past its actual nav items, showing an empty box once scrolled. Sticky
+  // needs a real pixel offset to sit right below Header rather than under it, and
+  // Header's height isn't a fixed constant (varies with/without LEMBAGA.logo) — measured
+  // live via ResizeObserver instead of guessed, so it stays correct if that ever changes.
+  const headerRef = useRef(null);
+  const [headerHeight, setHeaderHeight] = useState(48);
+  useEffect(() => {
+    if (!headerRef.current) return;
+    const el = headerRef.current;
+    const ro = new ResizeObserver(([entry]) => setHeaderHeight(entry.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [user]);
   const [navKey, setNavKey] = useState(""); // active Sidebar item; namespace differs per role, see buildNavGroups
   const [navGroupKey, setNavGroupKey] = useState(null); // which Sidebar group (if any) is currently drilled into
   const [showLogin, setShowLogin] = useState(false); // false = show PublicRekapLanding first; true = show LoginPage
@@ -5430,10 +5525,13 @@ export default function App() {
         )
       ) : (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => { setUser(null); setShowLogin(false); }} notifikasi={notifikasi} setNotifikasi={setNotifikasi} deviceTokens={deviceTokens} setDeviceTokens={setDeviceTokens} />
+          <div ref={headerRef}>
+            <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => { setUser(null); setShowLogin(false); }} notifikasi={notifikasi} setNotifikasi={setNotifikasi} deviceTokens={deviceTokens} setDeviceTokens={setDeviceTokens} />
+          </div>
           <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
             <Sidebar
               open={sidebarOpen}
+              topOffset={headerHeight}
               user={user} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser}
               archives={archives} onOpenArchive={() => setViewingArchive(true)}
               navSections={navSections} groupKey={effGroupKey}
