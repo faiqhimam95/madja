@@ -1320,7 +1320,7 @@ function Sidebar({ open, topOffset = 48, isMobile = false, user, ACCS, setACCS, 
     <div style={{
       width: "250px", flexShrink: 0, background: THEME.green[900], color: "white", display: "flex", flexDirection: "column",
       position: isMobile ? "fixed" : "sticky", top: topOffset, left: isMobile ? 0 : undefined, alignSelf: isMobile ? undefined : "flex-start",
-      height: isMobile ? `calc(100vh - ${topOffset}px)` : undefined, maxHeight: `calc(100vh - ${topOffset}px)`, overflowY: "auto",
+      height: `calc(100vh - ${topOffset}px)`, overflowY: "auto",
       boxShadow: THEME.shadow.raised, borderRadius: `0 ${THEME.radius.lg} ${THEME.radius.lg} 0`, zIndex: isMobile ? 55 : undefined,
     }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
