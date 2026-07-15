@@ -4180,7 +4180,7 @@ function RaportTab({ kelas, cl, sts, grades, kepData, SEM, LEMBAGA }) {
           <strong>Excel:</strong> file .xlsx dengan 3 sheet — Leger Nilai, Kepribadian & Absensi, Raport.
         </p>
       </div>
-      <div style={{ background: "#fef3c7", border: "1px solid #d97706", borderRadius: "8px", padding: "10px 14px", fontSize: "11px", color: "#92400e" }}>
+      <div style={{ background: "#fef3c7", border: "1px solid #d97706", borderRadius: THEME.radius.sm, padding: "10px 14px", fontSize: "11px", color: "#92400e" }}>
         <strong>Catatan:</strong> Tanda tangan QR Code di raport di-generate otomatis dari kombinasi nama Wali Kelas dan Kepala MDT, unik per kelas. Pastikan semua nilai dan kepribadian sudah terisi sebelum cetak resmi.
       </div>
     </div>
@@ -5173,7 +5173,7 @@ function ArchiveView({ archives, LEMBAGA, onClose }) {
     return (
       <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
         <p style={{ fontSize: "13px", color: "#9ca3af" }}>Belum ada arsip semester.</p>
-        <button onClick={onClose} style={{ padding: "7px 14px", background: "#f3f4f6", color: "#4b5563", border: "none", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>← Kembali</button>
+        <button onClick={onClose} className="btn-hover" style={{ padding: "7px 14px", background: "#f3f4f6", color: "#4b5563", border: "none", borderRadius: THEME.radius.sm, fontSize: "12px", cursor: "pointer" }}>← Kembali</button>
       </div>
     );
   }
@@ -5184,12 +5184,12 @@ function ArchiveView({ archives, LEMBAGA, onClose }) {
 
   return (
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
-      <div style={{ background: "#78350f", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+      <div style={{ background: "linear-gradient(135deg, #78350f, #92400e)", borderRadius: THEME.radius.md, padding: "14px 18px", color: "white", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", boxShadow: THEME.shadow.raised }}>
         <div>
           <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>🗄️ Arsip — {cl?.name || selKelas}</h2>
           <p style={{ margin: 0, fontSize: "12px", opacity: 0.85 }}>Semester {semLabel(semObj)} — mode hanya lihat, tidak bisa diubah</p>
         </div>
-        <button onClick={onClose} style={{ padding: "7px 14px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>← Kembali</button>
+        <button onClick={onClose} className="btn-hover" style={{ padding: "7px 14px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: THEME.radius.sm, fontSize: "12px", cursor: "pointer" }}>← Kembali</button>
       </div>
 
       <div style={{ display: "flex", gap: "10px", marginBottom: "14px", flexWrap: "wrap" }}>
