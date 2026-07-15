@@ -3561,7 +3561,7 @@ function GuruView({ user, allG, setAllG, CL, ST, SEM, locked = false }) {
           ⏳ Akun Anda belum dikonfirmasi Admin untuk semester ini — nilai bisa dilihat tapi belum bisa diubah/disimpan.
         </div>
       )}
-      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "14px", marginBottom: "14px", boxShadow: THEME.shadow.card }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <div>
             <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#4b5563", marginBottom: "5px" }}>Kelas</label>
@@ -3587,15 +3587,15 @@ function GuruView({ user, allG, setAllG, CL, ST, SEM, locked = false }) {
       </div>
 
       {selK && selM && (
-        <div style={{ background: "white", borderRadius: "12px", overflow: "hidden", border: "1px solid #e5e7eb" }}>
-          <div style={{ padding: "10px 14px", background: "#064e3b", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ background: "white", borderRadius: THEME.radius.md, overflow: "hidden", border: "1px solid #e5e7eb", boxShadow: THEME.shadow.card }}>
+          <div style={{ padding: "10px 14px", background: THEME.green[900], display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ color: "white", fontWeight: 500, fontSize: "13px" }}>{CL[selK]?.sh} — {selM}</span>
             <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "11px" }}>(H×40%)+(UAS×60%)</span>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
               <thead>
-                <tr style={{ background: "#065f46" }}>
+                <tr style={{ background: THEME.green[700] }}>
                   <th style={{ ...thS, width: "36px", textAlign: "center" }}>No</th>
                   <th style={{ ...thS, minWidth: "160px" }}>Nama Santri</th>
                   <th style={{ ...thS, textAlign: "center", width: "90px" }}>Nilai Harian</th>
@@ -3681,7 +3681,7 @@ function LegerNilai({ kelas, grades, CL, ST, kep, SEM }) {
   const mn = allRata.length ? Math.min(...allRata).toFixed(1) : "—";
 
   return (
-    <div style={{ background: "white", borderRadius: "12px", overflow: "hidden", border: "1px solid #e5e7eb" }}>
+    <div style={{ background: "white", borderRadius: THEME.radius.md, overflow: "hidden", border: "1px solid #e5e7eb", boxShadow: THEME.shadow.card }}>
       <div style={{ padding: "10px 14px", background: "#ecfdf5", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
         <div>
           <div style={{ fontSize: "14px", fontWeight: 500, color: "#065f46" }}>Leger Nilai — {cl.name}</div>
@@ -3799,7 +3799,7 @@ function KepribadianView({ kelas, allKep, setAllKep, ST, CL, grades, SEM, LEMBAG
   const tdK = { padding: "6px 6px", borderRight: "1px solid #f3f4f6", textAlign: "center", verticalAlign: "middle", fontSize: "11px" };
 
   return (
-    <div style={{ background: "white", borderRadius: "12px", overflow: "hidden", border: "1px solid #e5e7eb" }}>
+    <div style={{ background: "white", borderRadius: THEME.radius.md, overflow: "hidden", border: "1px solid #e5e7eb", boxShadow: THEME.shadow.card }}>
       <div style={{ padding: "10px 14px", background: "#ecfdf5", borderBottom: "1px solid #e5e7eb" }}>
         <div style={{ fontSize: "14px", fontWeight: 500, color: "#065f46" }}>Kepribadian & Absensi</div>
         <div style={{ fontSize: "11px", color: "#047857", marginTop: "2px" }}>
@@ -4159,7 +4159,7 @@ function RaportTab({ kelas, cl, sts, grades, kepData, SEM, LEMBAGA }) {
 
   return (
     <div>
-      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px", marginBottom: "12px" }}>
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "16px", marginBottom: "12px", boxShadow: THEME.shadow.card }}>
         <div style={{ marginBottom: "12px" }}>
           <label style={labelA}>Cetak / Export untuk</label>
           <select value={selIdx} onChange={(e) => setSelIdx(e.target.value)} style={inputA}>
@@ -4198,7 +4198,7 @@ function WkView({ user, allG, allKep, setAllKep, CL, ST, SEM, LEMBAGA, locked = 
   if (!cl) return null;
   return (
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
-      <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+      <div style={{ background: `linear-gradient(135deg, ${THEME.green[900]}, ${THEME.green[700]})`, borderRadius: THEME.radius.md, padding: "14px 18px", color: "white", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", boxShadow: THEME.shadow.raised }}>
         <div>
           <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>{cl.name}</h2>
           <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>Wali Kelas: {user.name} — Semester {semLabel(SEM)}</p>
@@ -4262,8 +4262,8 @@ function JadwalPribadiTab({ myGuru, rows }) {
     );
   }
   return (
-    <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
-      <div style={{ padding: "10px 14px", background: "#064e3b", color: "white", fontSize: "13px", fontWeight: 500 }}>Jadwal Mengajar — {myGuru.nama} ({myGuru.kode})</div>
+    <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
+      <div style={{ padding: "10px 14px", background: THEME.green[900], color: "white", fontSize: "13px", fontWeight: 500 }}>Jadwal Mengajar — {myGuru.nama} ({myGuru.kode})</div>
       <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
         <thead>
@@ -4315,7 +4315,7 @@ function StatusKehadiranRow({ row, editable, onAjukanIzin, locked }) {
         {status ? (
           <span style={{ flexShrink: 0, padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: 600, background: st?.bg, color: st?.fg }}>{st?.label || status}</span>
         ) : editable ? (
-          <button disabled={locked} onClick={() => setOpen((o) => !o)} style={{ flexShrink: 0, padding: "4px 9px", fontSize: "10.5px", fontWeight: 500, border: "1px solid #d1d5db", borderRadius: "6px", background: "white", color: "#374151", cursor: locked ? "not-allowed" : "pointer" }}>📨 Ajukan Izin</button>
+          <button disabled={locked} onClick={() => setOpen((o) => !o)} className="btn-hover" style={{ flexShrink: 0, padding: "4px 9px", fontSize: "10.5px", fontWeight: 500, border: "1px solid #d1d5db", borderRadius: THEME.radius.sm, background: "white", color: "#374151", cursor: locked ? "not-allowed" : "pointer" }}>📨 Ajukan Izin</button>
         ) : (
           <span style={{ flexShrink: 0, fontSize: "10.5px", color: "#d1d5db" }}>-</span>
         )}
@@ -4348,7 +4348,7 @@ function GuruStatusKehadiranPanel({ days, onAjukanIzin, locked }) {
       {cards.map((c) => {
         const d = days[c.key];
         return (
-          <div key={c.key} style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <div key={c.key} className="card-hover" style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
             <div style={{ padding: "8px 12px", background: "#f9fafb", fontSize: "12px", fontWeight: 600, color: "#374151" }}>
               {c.label} <span style={{ fontWeight: 400, color: "#9ca3af" }}>· {formatTanggalIndo(d.iso)}</span>
             </div>
@@ -4377,8 +4377,8 @@ function JadwalPerHariTab({ hari, setHari, putraKelas, putriKelas, JADWAL, guruB
     return `${g} — ${m}`;
   };
   const table = (title, kelasList, grid) => kelasList.length === 0 ? null : (
-    <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginBottom: "14px" }}>
-      <div style={{ padding: "10px 14px", background: "#064e3b", color: "white", fontSize: "13px", fontWeight: 500 }}>{title}</div>
+    <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", marginBottom: "14px", boxShadow: THEME.shadow.card }}>
+      <div style={{ padding: "10px 14px", background: THEME.green[900], color: "white", fontSize: "13px", fontWeight: 500 }}>{title}</div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
@@ -4428,8 +4428,8 @@ function JadwalPerKelasTab({ kelasKode, setKelasKode, putraKelas, putriKelas, JA
         </select>
       </div>
       {active && (
-        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
-          <div style={{ padding: "10px 14px", background: "#064e3b", color: "white", fontSize: "13px", fontWeight: 500 }}>{active.label}</div>
+        <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
+          <div style={{ padding: "10px 14px", background: THEME.green[900], color: "white", fontSize: "13px", fontWeight: 500 }}>{active.label}</div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
@@ -4513,7 +4513,7 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKeha
 
   return (
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
-      <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px" }}>
+      <div style={{ background: `linear-gradient(135deg, ${THEME.green[900]}, ${THEME.green[700]})`, borderRadius: THEME.radius.md, padding: "14px 18px", color: "white", marginBottom: "16px", boxShadow: THEME.shadow.raised }}>
         <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>🗓️ Jadwal Pelajaran</h2>
         <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>{user.name} — Semester {semLabel(SEM)}</p>
       </div>
@@ -4521,7 +4521,7 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKeha
         myGuru ? (
           <>
             <GuruStatusKehadiranPanel days={statusDays} locked={locked} onAjukanIzin={submitIzin} />
-            <button onClick={() => setShowFullJadwal((s) => !s)} style={{ marginBottom: "10px", padding: "7px 14px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>
+            <button onClick={() => setShowFullJadwal((s) => !s)} className="btn-hover" style={{ marginBottom: "10px", padding: "7px 14px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: THEME.radius.sm, fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>
               {showFullJadwal ? "▾ Sembunyikan Jadwal Lengkap" : "▸ Tampilkan Jadwal Lengkap"}
             </button>
             {showFullJadwal && <JadwalPribadiTab myGuru={myGuru} rows={pribadiRows} />}
@@ -4533,7 +4533,7 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKeha
       {tab === "hari" && <JadwalPerHariTab hari={hari} setHari={setHari} putraKelas={putraKelas} putriKelas={putriKelas} JADWAL={JADWAL} guruByKode={guruByKode} mapelByKode={mapelByKode} />}
       {tab === "kelas" && <JadwalPerKelasTab kelasKode={kelasKode} setKelasKode={setKelasKode} putraKelas={putraKelas} putriKelas={putriKelas} JADWAL={JADWAL} guruByKode={guruByKode} mapelByKode={mapelByKode} />}
       {tab === "semua" && (
-        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+        <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
           <iframe title="Jadwal Keseluruhan" srcDoc={jadwalFullHTML} style={{ width: "100%", height: "1400px", border: "none", display: "block" }} />
         </div>
       )}
@@ -4725,7 +4725,7 @@ function rowSpanGroups(rows, keyFn) {
 function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, onSetStatus, onPatchRecord, showLayer, onKirimPeringatan }) {
   const { startOf, countOf } = rowSpanGroups(rows, (r) => `${r.layer}|${r.jam.kode}`);
   return (
-    <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+    <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
@@ -4771,8 +4771,8 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
                           ✅ Peringatan terkirim — <button onClick={() => onKirimPeringatan(r.layer, r.jam.kode, r.kelas.kode, r.cell.g)} style={{ padding: 0, background: "none", border: "none", color: "#0369a1", fontSize: "9.5px", cursor: "pointer", textDecoration: "underline" }}>kirim lagi</button>
                         </div>
                       ) : (
-                        <button disabled={locked} onClick={() => onKirimPeringatan(r.layer, r.jam.kode, r.kelas.kode, r.cell.g)}
-                          style={{ marginTop: "4px", padding: "3px 8px", fontSize: "9.5px", fontWeight: 600, border: "none", borderRadius: "5px", cursor: locked ? "not-allowed" : "pointer", background: "#fef3c7", color: "#92400e" }}>
+                        <button disabled={locked} onClick={() => onKirimPeringatan(r.layer, r.jam.kode, r.kelas.kode, r.cell.g)} className="btn-hover"
+                          style={{ marginTop: "4px", padding: "3px 8px", fontSize: "9.5px", fontWeight: 600, border: "none", borderRadius: THEME.radius.sm, cursor: locked ? "not-allowed" : "pointer", background: "#fef3c7", color: "#92400e" }}>
                           ⚠️ Kirim Peringatan
                         </button>
                       )
@@ -4886,7 +4886,7 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, AC
 
   return (
     <div style={{ padding: "16px", maxWidth: "1100px", margin: "0 auto" }}>
-      <div style={{ background: "#064e3b", borderRadius: "12px", padding: "14px 18px", color: "white", marginBottom: "16px" }}>
+      <div style={{ background: `linear-gradient(135deg, ${THEME.green[900]}, ${THEME.green[700]})`, borderRadius: THEME.radius.md, padding: "14px 18px", color: "white", marginBottom: "16px", boxShadow: THEME.shadow.raised }}>
         <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>✅ Kehadiran Guru — Jadwal {layer === "putra" ? "Putra" : "Putri"}</h2>
         <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>{hari ? `${HARI_LABEL_ID[hari]}, ${formatTanggalIndo(iso)}` : formatTanggalIndo(iso)}</p>
       </div>
