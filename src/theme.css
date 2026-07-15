@@ -3,6 +3,17 @@
    stays as the THEME JS object in App.jsx, referenced from inline styles as before.
    Kept intentionally small: utility classes only, no component-specific rules. */
 
+/* Reset — this app never had one, so the browser's default `body` margin (~8px) left a
+   sliver of the page's white/default background visible around every edge, most obvious
+   against Header's dark green reaching for "full ke samping dan ke atas". */
+html, body {
+  margin: 0;
+  padding: 0;
+}
+#root {
+  min-height: 100vh;
+}
+
 :root {
   --green-950: #043327;
   --green-900: #064e3b;
