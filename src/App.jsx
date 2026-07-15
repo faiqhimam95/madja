@@ -1517,7 +1517,8 @@ function SC({ icon, label, val, onClick, hint }) {
   return (
     <div
       onClick={onClick}
-      style={{ background: "white", borderRadius: "12px", padding: "14px", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: "10px", cursor: onClick ? "pointer" : "default", position: "relative" }}
+      className={onClick ? "card-hover" : undefined}
+      style={{ background: "white", borderRadius: THEME.radius.md, padding: "14px", border: "1px solid #e5e7eb", boxShadow: THEME.shadow.card, display: "flex", alignItems: "center", gap: "10px", cursor: onClick ? "pointer" : "default", position: "relative" }}
     >
       <div style={{ fontSize: "24px" }}>{icon}</div>
       <div>
@@ -1768,19 +1769,19 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "10px", marginBottom: "18px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", marginBottom: "18px" }}>
         <SC icon="🕌" label="Total Kelas" val={ks.length} />
         <SC icon="👥" label="Total Santri" val={tot} />
         <SC icon="📚" label="Semester" val={semLabelShort(SEM)} onClick={isSuperAdmin ? openSemModal : undefined} hint={isSuperAdmin ? "klik untuk ganti" : undefined} />
       </div>
-      <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+      <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
         <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb", fontSize: "14px", fontWeight: 500, color: "#111827" }}>✅ Rekap Kehadiran Guru</div>
         <div style={{ padding: "14px" }}>
           <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} />
         </div>
       </div>
 
-      <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "18px" }}>
+      <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "18px", boxShadow: THEME.shadow.card }}>
         <div style={{ padding: "12px 14px", borderBottom: showRekapKelas ? "1px solid #e5e7eb" : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: "14px", fontWeight: 500, color: "#111827" }}>📊 Rekap Per Kelas</span>
           <button onClick={() => setShowRekapKelas((s) => !s)} style={{ padding: "5px 12px", background: showRekapKelas ? "#f3f4f6" : "#ecfdf5", color: showRekapKelas ? "#4b5563" : "#065f46", border: "none", borderRadius: "8px", fontSize: "11px", fontWeight: 500, cursor: "pointer" }}>
@@ -1805,7 +1806,7 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
 
       {showSemModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: "16px" }}>
-          <div style={{ background: "white", borderRadius: "14px", padding: "20px", width: "100%", maxWidth: "440px", maxHeight: "90vh", overflowY: "auto" }}>
+          <div style={{ background: "white", borderRadius: THEME.radius.lg, padding: "20px", width: "100%", maxWidth: "440px", maxHeight: "90vh", overflowY: "auto", boxShadow: THEME.shadow.popover }}>
             <div style={{ fontSize: "15px", fontWeight: 600, color: "#111827", marginBottom: "4px" }}>📚 Ganti Semester Aktif</div>
             <p style={{ fontSize: "12px", color: "#6b7280", marginTop: 0, marginBottom: "14px" }}>Semester saat ini: <strong>{semLabel(SEM)}</strong></p>
 
@@ -1901,7 +1902,7 @@ function AdminKelas({ CL, setCL, ST, setST, GM, setGM, setACCS, setAllG, setAllK
       </div>
 
       {editing !== null && (
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "14px", marginBottom: "14px", boxShadow: THEME.shadow.card }}>
           <div style={{ display: "grid", gridTemplateColumns: editing === "new" ? "1fr 1fr 1fr" : "1fr 1fr", gap: "10px" }}>
             {editing === "new" && (
               <div>
@@ -1925,7 +1926,7 @@ function AdminKelas({ CL, setCL, ST, setST, GM, setGM, setACCS, setAllG, setAllK
         </div>
       )}
 
-      <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+      <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
         <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
@@ -2070,7 +2071,7 @@ function AdminWali({ ACCS, setACCS, CL, setCL, GM, setGM }) {
       </div>
 
       {editing !== null && (
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "14px", marginBottom: "14px", boxShadow: THEME.shadow.card }}>
           {editing === "new" && (
             <div style={{ display: "flex", gap: "4px", marginBottom: "12px", background: "#f3f4f6", borderRadius: "8px", padding: "4px", width: "fit-content" }}>
               {[["new", "Akun Baru"], ["existing", "Pakai Akun yang Sudah Ada"]].map(([k, lbl]) => (
@@ -2129,7 +2130,7 @@ function AdminWali({ ACCS, setACCS, CL, setCL, GM, setGM }) {
         </div>
       )}
 
-      <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+      <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
         <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
@@ -2216,7 +2217,7 @@ function AdminSiswa({ CL, ST, setST, setAllG, setAllKep }) {
 
   return (
     <div>
-      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "14px", marginBottom: "14px", boxShadow: THEME.shadow.card }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
           <div>
             <label style={labelA}>Kelas</label>
@@ -2241,7 +2242,7 @@ function AdminSiswa({ CL, ST, setST, setAllG, setAllKep }) {
         </div>
       </div>
 
-      <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+      <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
         <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: "13px", fontWeight: 500 }}>{CL[selK]?.name} — {sts.length} siswa</span>
           <div style={{ display: "flex", gap: "8px" }}>
@@ -2341,14 +2342,14 @@ function AdminMapel({ CL, setCL, setGM }) {
 
   return (
     <div>
-      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "14px", marginBottom: "14px", boxShadow: THEME.shadow.card }}>
         <label style={labelA}>Kelas</label>
         <select value={selK} onChange={(e) => setSelK(e.target.value)} style={inputA}>
           {ks.map((k) => <option key={k} value={k}>{CL[k].name} ({CL[k].sh})</option>)}
         </select>
       </div>
 
-      <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+      <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
         <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
           <span style={{ fontSize: "13px", fontWeight: 500 }}>{CL[selK]?.name} — {mapel.length} mata pelajaran</span>
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -2507,7 +2508,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
           ← Kembali ke Daftar Guru
         </button>
 
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "14px", marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap", boxShadow: THEME.shadow.card }}>
           <div>
             <div style={{ fontSize: "15px", fontWeight: 500, color: "#111827" }}>{guru.name}</div>
             <div style={{ fontSize: "11px", color: "#9ca3af", fontFamily: "monospace" }}>{guru.u}{kelasList(guru).length > 0 ? " — Wali " + kelasList(guru).map((k) => CL[k]?.sh || k).join(", ") : ""}</div>
@@ -2516,7 +2517,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
         </div>
 
         {editingAcc === guru.u && (
-          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
+          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "14px", marginBottom: "14px", boxShadow: THEME.shadow.card }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginBottom: "10px" }}>
               <div>
                 <label style={labelA}>Nama</label>
@@ -2553,7 +2554,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
           </div>
         )}
 
-        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+        <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
           <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
             <span style={{ fontSize: "13px", fontWeight: 500 }}>Penugasan Mata Pelajaran</span>
             {editingAsg === null && <GreenBtn onClick={startNewAsg} style={{ padding: "6px 12px", fontSize: "12px" }}>+ Tambah Penugasan</GreenBtn>}
@@ -2633,7 +2634,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
       )}
 
       {editingAcc !== null && (
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "14px", marginBottom: "14px", boxShadow: THEME.shadow.card }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginBottom: "10px" }}>
             <div>
               <label style={labelA}>Nama</label>
@@ -2673,7 +2674,7 @@ function AdminPenugasan({ ACCS, setACCS, GM, setGM, CL, setCL }) {
       {staffList.length === 0 ? (
         <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada akun guru/wali kelas. Tambahkan dulu.</div>
       ) : (
-        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+        <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
           <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
             <thead>
@@ -3283,7 +3284,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
       {tab === "jadwal-master" && (
         <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "14px" }}>
-          <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
             <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "13px", fontWeight: 500 }}>Kode Guru — {JADWAL.guru.length}</span>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -3326,7 +3327,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
             </div>
           </div>
 
-          <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
             <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "13px", fontWeight: 500 }}>Kode Mapel — {JADWAL.mapel.length}</span>
               <div style={{ display: "flex", gap: "6px" }}>
@@ -3358,7 +3359,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
           </div>
         </div>
 
-        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "14px" }}>
+        <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "14px", boxShadow: THEME.shadow.card }}>
           <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb" }}>
             <span style={{ fontSize: "13px", fontWeight: 500 }}>Nama Kelas — Jadwal Putra</span>
             <p style={{ fontSize: "11px", color: "#9ca3af", margin: "4px 0 0" }}>Nama kolom kelas di tabel Jadwal Putra, diedit langsung di sini. Jumlah & urutan kelas tetap (5 Awwaliyah + 4 Wustho); "WS I B"/"WS II B" tetap kelas yang sama dengan pasangannya di Jadwal Putri walau namanya diubah.</p>
@@ -3373,7 +3374,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
           </div>
         </div>
 
-        <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "14px" }}>
+        <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", marginTop: "14px", boxShadow: THEME.shadow.card }}>
           <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb" }}>
             <span style={{ fontSize: "13px", fontWeight: 500 }}>Nama Kelas — Jadwal Putri</span>
             <p style={{ fontSize: "11px", color: "#9ca3af", margin: "4px 0 0" }}>Nama kolom kelas di tabel Jadwal Putri, diedit langsung di sini (daftar kelasnya sendiri tetap mengikuti kelas Putri di tab "Kelas"). WS I B/WS II B tidak muncul di sini — namanya diatur bersama Jadwal Putra di atas karena kelas yang sama.</p>
@@ -3397,7 +3398,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
       {tab === "jadwal-ketentuan" && (
         <>
           <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Daftar guru berikut sama dengan daftar di tab "Guru & Mapel". Atur kelas yang boleh diampu dan hari/jam ketersediaan tiap guru — dipakai untuk mendeteksi bentrok jadwal otomatis di tab "Jadwal".</p>
-          <div style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
             <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
               <thead>
