@@ -1213,13 +1213,13 @@ function NotifBell({ notifikasi, user, onOpen }) {
 }
 
 // Replaces the old top Header bar entirely — every navigational choice (section tabs
-// across every role, Arsip, Akun, role/kelas switch, Keluar) now lives here instead,
-// per explicit user request. `open` toggles between the full panel and a slim rail
-// with just the reopen button, so it can be hidden/shown without losing its place.
+// across every role, Arsip, Akun, role/kelas switch) now lives here instead, per
+// explicit user request. `open` toggles between the full panel and a slim rail with
+// just the reopen button, so it can be hidden/shown without losing its place.
 // Slim, always-visible, sticky top bar — the only thing permanently on screen regardless
-// of Sidebar state: branding + the Sidebar show/hide toggle on the left, account owner +
-// Keluar on the right. Deliberately minimal (no nav, no Akun/Arsip) per explicit request;
-// everything else lives in the collapsible Sidebar below it.
+// of Sidebar state: branding + the Sidebar show/hide toggle on the left, notifications on
+// the right. Account owner's name + Keluar moved OUT of here into Sidebar's own footer
+// (click-to-reveal menu), per explicit request — Header no longer needs `onLogout` at all.
 // forwardRef so App() can measure this element's real rendered height (for Sidebar's
 // sticky top offset, see Sidebar's own comment) WITHOUT wrapping it in an extra plain
 // div — a sticky element can only stay pinned while scrolling *within its own parent's
@@ -1227,7 +1227,7 @@ function NotifBell({ notifikasi, user, onOpen }) {
 // break its stickiness the instant that tiny wrapper scrolls past the viewport, since
 // Header's original parent (the full-page-height column flex in App()) is what gave it
 // room to stay pinned across the whole page's scroll range in the first place.
-const Header = React.forwardRef(function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, onLogout, notifikasi, setNotifikasi, deviceTokens, setDeviceTokens }, ref) {
+const Header = React.forwardRef(function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, notifikasi, setNotifikasi, deviceTokens, setDeviceTokens }, ref) {
   const markAllRead = () => {
     if (!notifikasi || !notifikasi.some((n) => !n.dibaca && (n.untukUsername === user.username || n.untukLayer === user.layer))) return;
     setNotifikasi((prev) => prev.map((n) => ((n.untukUsername === user.username || n.untukLayer === user.layer) ? { ...n, dibaca: true } : n)));
@@ -1256,8 +1256,6 @@ const Header = React.forwardRef(function Header({ sidebarOpen, onToggleSidebar, 
           <button onClick={enablePush} title="Aktifkan notifikasi push di perangkat ini" className="btn-hover" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: THEME.radius.sm, padding: "6px 10px", cursor: "pointer", fontSize: "11px", fontWeight: 500 }}>🔔 Aktifkan</button>
         )}
         <NotifBell notifikasi={notifikasi} user={user} onOpen={markAllRead} />
-        <span style={{ fontSize: "13px", fontWeight: 500 }}>{user.name}</span>
-        <button onClick={onLogout} className="btn-hover" style={{ padding: "6px 12px", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: THEME.radius.sm, fontSize: "12px", cursor: "pointer" }}>Keluar</button>
       </div>
     </div>
   );
@@ -1269,10 +1267,19 @@ const Header = React.forwardRef(function Header({ sidebarOpen, onToggleSidebar, 
 // folder — picking a group swaps which group's items show below it and immediately
 // navigates to that group's first item. Standalone items (not part of any group) still
 // render as plain buttons above the dropdown.
-function Sidebar({ open, topOffset = 48, user, ACCS, setACCS, GM, setGM, setUser, CL, archives, onOpenArchive, navSections, groupKey, onSelectGroup, activeKey, onSelect }) {
+// Shape/footer redesigned per a reference screenshot (Claude Desktop's sidebar): rounded
+// corners on the content-facing edge instead of a flush rectangle, and the account name
+// lives in a footer row (click reveals a small Keluar/Edit-Akun menu) instead of sitting
+// in the Header — see Header's own comment, `onLogout` moved here as a prop.
+// `isMobile` switches positioning from `sticky` (desktop — sits in normal flex flow,
+// pinned while scrolling) to `fixed` (mobile — a true overlay drawer floating OVER the
+// content instead of squeezing it into a narrower column; App() also renders a backdrop
+// behind it on mobile that closes the drawer on tap, same as any standard mobile nav).
+function Sidebar({ open, topOffset = 48, isMobile = false, user, ACCS, setACCS, GM, setGM, setUser, onLogout, CL, archives, onOpenArchive, navSections, groupKey, onSelectGroup, activeKey, onSelect }) {
   const rl = { admin: "#7c3aed", superadmin: "#b91c1c", wk: "#0369a1", guru: "#b45309", tu: "#0d9488" };
   const rn = { admin: "Administrator", superadmin: "Super Admin", wk: "Wali Kelas", guru: "Guru Mapel", tu: "Tata Usaha" };
   const [showAcct, setShowAcct] = useState(false);
+  const [showAcctMenu, setShowAcctMenu] = useState(false);
   const [form, setForm] = useState({ u: "", p: "" });
   const [acctSaved, setAcctSaved] = useState(false);
 
@@ -1286,7 +1293,7 @@ function Sidebar({ open, topOffset = 48, user, ACCS, setACCS, GM, setGM, setUser
   const switchToWali = (kelas) => setUser((prev) => ({ ...prev, role: "wk", kelasAll: waliKelasAll, kelas }));
   const switchToGuru = () => setUser((prev) => ({ ...prev, role: "guru", asgn: GM[user.username] || [] }));
 
-  const openAcct = () => { setForm({ u: user.username, p: acc?.p || "" }); setShowAcct(true); setAcctSaved(false); };
+  const openAcct = () => { setForm({ u: user.username, p: acc?.p || "" }); setShowAcct(true); setAcctSaved(false); setShowAcctMenu(false); };
   const saveAcct = () => {
     const newU = form.u.trim();
     const newP = form.p.trim();
@@ -1307,9 +1314,15 @@ function Sidebar({ open, topOffset = 48, user, ACCS, setACCS, GM, setGM, setUser
   const standaloneItems = navSections.filter((s) => s.type === "item");
   const groups = navSections.filter((s) => s.type === "group");
   const activeGroup = groups.find((g) => g.key === groupKey) || groups[0] || null;
+  const initials = (user.name || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
   return (
-    <div style={{ width: "250px", flexShrink: 0, background: THEME.green[900], color: "white", display: "flex", flexDirection: "column", position: "sticky", top: topOffset, alignSelf: "flex-start", maxHeight: `calc(100vh - ${topOffset}px)`, overflowY: "auto", boxShadow: THEME.shadow.raised }}>
+    <div style={{
+      width: "250px", flexShrink: 0, background: THEME.green[900], color: "white", display: "flex", flexDirection: "column",
+      position: isMobile ? "fixed" : "sticky", top: topOffset, left: isMobile ? 0 : undefined, alignSelf: isMobile ? undefined : "flex-start",
+      height: isMobile ? `calc(100vh - ${topOffset}px)` : undefined, maxHeight: `calc(100vh - ${topOffset}px)`, overflowY: "auto",
+      boxShadow: THEME.shadow.raised, borderRadius: `0 ${THEME.radius.lg} ${THEME.radius.lg} 0`, zIndex: isMobile ? 55 : undefined,
+    }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
         <div style={{ display: "inline-block", background: rl[user.role], padding: "2px 8px", borderRadius: "12px", fontSize: "10px", fontWeight: 500 }}>
           {rn[user.role]}{user.role === "wk" && user.kelas ? " — " + CL[user.kelas]?.sh : ""}{user.role === "tu" ? " — " + (user.layer === "putra" ? "Putra" : "Putri") : ""}
@@ -1362,11 +1375,28 @@ function Sidebar({ open, topOffset = 48, user, ACCS, setACCS, GM, setGM, setUser
         )}
       </div>
 
-      <div style={{ padding: "10px", borderTop: "1px solid rgba(255,255,255,0.12)", position: "relative" }}>
-        {archives && Object.keys(archives).length > 0 && (
+      {archives && Object.keys(archives).length > 0 && (
+        <div style={{ padding: "10px 10px 0" }}>
           <button onClick={onOpenArchive} className="nav-item" style={navBtnStyle(false)}>🗄️ Arsip</button>
+        </div>
+      )}
+
+      {/* Account row lives here instead of the Header (per explicit request) — clicking
+          it reveals a small menu (Edit Akun / Keluar) rather than exposing the logout
+          button directly, matching the reference sidebar's account-footer pattern. */}
+      <div style={{ padding: "10px", borderTop: "1px solid rgba(255,255,255,0.12)", position: "relative" }}>
+        <button onClick={() => setShowAcctMenu((s) => !s)} className="nav-item" style={{ display: "flex", alignItems: "center", gap: "9px", width: "100%", padding: "7px 8px", border: "none", borderRadius: THEME.radius.sm, cursor: "pointer", background: showAcctMenu ? "rgba(255,255,255,0.12)" : "transparent", color: "white", textAlign: "left" }}>
+          <span style={{ width: "26px", height: "26px", borderRadius: THEME.radius.pill, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10.5px", fontWeight: 700, flexShrink: 0 }}>{initials}</span>
+          <span style={{ fontSize: "12.5px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{user.name}</span>
+          <span style={{ fontSize: "10px", opacity: 0.6 }}>{showAcctMenu ? "▾" : "▸"}</span>
+        </button>
+
+        {showAcctMenu && (
+          <div style={{ position: "absolute", bottom: "100%", left: "10px", right: "10px", background: "white", borderRadius: THEME.radius.md, padding: "6px", boxShadow: THEME.shadow.popover, marginBottom: "8px", zIndex: 100 }}>
+            <button onClick={openAcct} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", borderRadius: THEME.radius.sm, fontSize: "12.5px", fontWeight: 500, cursor: "pointer", background: "transparent", color: "#111827" }}>⚙️ Edit Akun</button>
+            <button onClick={onLogout} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", borderRadius: THEME.radius.sm, fontSize: "12.5px", fontWeight: 500, cursor: "pointer", background: "transparent", color: "#dc2626" }}>🚪 Keluar</button>
+          </div>
         )}
-        <button onClick={openAcct} className="nav-item" style={navBtnStyle(false)}>⚙️ Akun</button>
 
         {showAcct && (
           <div style={{ position: "absolute", bottom: "100%", left: "10px", right: "10px", background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "16px", boxShadow: THEME.shadow.popover, marginBottom: "8px", zIndex: 100 }}>
@@ -5533,11 +5563,16 @@ export default function App() {
         )
       ) : (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          <Header ref={headerRef} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} onLogout={() => { setUser(null); setShowLogin(false); }} notifikasi={notifikasi} setNotifikasi={setNotifikasi} deviceTokens={deviceTokens} setDeviceTokens={setDeviceTokens} />
-          <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          <Header ref={headerRef} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((s) => !s)} LEMBAGA={LEMBAGA} user={user} notifikasi={notifikasi} setNotifikasi={setNotifikasi} deviceTokens={deviceTokens} setDeviceTokens={setDeviceTokens} />
+          <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
+            {isMobile && sidebarOpen && (
+              <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", top: headerHeight, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.35)", zIndex: 54 }} />
+            )}
             <Sidebar
               open={sidebarOpen}
               topOffset={headerHeight}
+              isMobile={isMobile}
+              onLogout={() => { setUser(null); setShowLogin(false); }}
               user={user} CL={CL} ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} setUser={setUser}
               archives={archives} onOpenArchive={() => setViewingArchive(true)}
               navSections={navSections} groupKey={effGroupKey}
