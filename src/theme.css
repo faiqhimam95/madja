@@ -47,9 +47,20 @@
   filter: brightness(1.12);
 }
 
+/* Animated focus ring — box-shadow (not outline) so it transitions smoothly via each
+   input's own `transition` property (see inputA in App.jsx) instead of snapping in. */
+input,
+select,
+textarea {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--green-500);
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18);
+}
 button:focus-visible {
   outline: 2px solid var(--green-500);
   outline-offset: 1px;

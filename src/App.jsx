@@ -1047,8 +1047,8 @@ const labelA = { display: "block", fontSize: "11px", fontWeight: 500, color: "#4
 // authentication gate — an intentional trade-off per the request, not an oversight.
 function PublicRekapLanding({ JADWAL, CL, kehadiranGuru, LEMBAGA, onMasuk }) {
   return (
-    <div style={{ minHeight: "100vh", background: "#f9fafb", fontFamily: "system-ui,-apple-system,sans-serif" }}>
-      <div style={{ background: "#064e3b", color: "white", padding: "20px 16px", textAlign: "center" }}>
+    <div style={{ minHeight: "100vh", background: THEME.green[50], fontFamily: "system-ui,-apple-system,sans-serif" }}>
+      <div style={{ background: `linear-gradient(160deg, ${THEME.green[900]}, ${THEME.green[700]})`, color: "white", padding: "28px 16px", textAlign: "center", boxShadow: THEME.shadow.raised }}>
         {LEMBAGA.logo ? <img src={LEMBAGA.logo} alt="Logo" style={{ width: "48px", height: "48px", objectFit: "contain", marginBottom: "6px" }} /> : <div style={{ fontSize: "38px", marginBottom: "6px" }}>🕌</div>}
         <div style={{ fontSize: "17px", fontWeight: 500 }}>{LEMBAGA.namaSingkat}</div>
         <div style={{ fontSize: "12px", opacity: 0.75, marginTop: "2px" }}>✅ Rekap Kehadiran Guru</div>
@@ -1107,15 +1107,15 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA, onBack }) {
   const adA = ACCS.filter((a) => a.role === "admin");
 
   return (
-    <div style={{ minHeight: "100vh", background: "#064e3b", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px", fontFamily: "system-ui,-apple-system,sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${THEME.green[900]}, ${THEME.green[700]})`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px", fontFamily: "system-ui,-apple-system,sans-serif" }}>
       <div style={{ textAlign: "center", marginBottom: "20px", color: "white" }}>
         {LEMBAGA.logo ? <img src={LEMBAGA.logo} alt="Logo" style={{ width: "56px", height: "56px", objectFit: "contain", marginBottom: "6px" }} /> : <div style={{ fontSize: "44px", marginBottom: "6px" }}>🕌</div>}
         <div style={{ fontSize: "20px", fontWeight: 500, marginBottom: "2px" }}>{LEMBAGA.namaSingkat}</div>
         <div style={{ fontSize: "12px", opacity: 0.65 }}>Semester {semLabel(SEM)}</div>
       </div>
-      <div style={{ background: "white", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "380px" }}>
+      <div style={{ background: "white", borderRadius: THEME.radius.lg, padding: "24px", width: "100%", maxWidth: "380px", boxShadow: THEME.shadow.popover }}>
         {onBack && !chooseKelas && (
-          <button onClick={onBack} style={{ display: "block", marginBottom: "14px", padding: 0, background: "transparent", border: "none", color: "#6b7280", fontSize: "12px", cursor: "pointer" }}>← Kembali ke Rekap</button>
+          <button onClick={onBack} className="btn-hover" style={{ display: "block", marginBottom: "14px", padding: 0, background: "transparent", border: "none", color: "#6b7280", fontSize: "12px", cursor: "pointer" }}>← Kembali ke Rekap</button>
         )}
         {chooseKelas ? (
           <div>
@@ -1127,21 +1127,21 @@ function LoginPage({ onLogin, ACCS, GM, CL, SEM, LEMBAGA, onBack }) {
                 👤 {CL?.[k]?.name || k} ({CL?.[k]?.sh || k})
               </GreenBtn>
             ))}
-            <button onClick={() => setChooseKelas(null)} style={{ width: "100%", marginTop: "2px", padding: "8px", background: "transparent", color: "#6b7280", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", cursor: "pointer" }}>
+            <button onClick={() => setChooseKelas(null)} className="btn-hover" style={{ width: "100%", marginTop: "2px", padding: "8px", background: "transparent", color: "#6b7280", border: "1px solid #d1d5db", borderRadius: THEME.radius.sm, fontSize: "12px", cursor: "pointer" }}>
               ← Kembali
             </button>
           </div>
         ) : (
           <>
             <div style={{ marginBottom: "14px" }}>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: "#4b5563", marginBottom: "5px" }}>Username</label>
+              <label style={labelA}>Username</label>
               <input type="text" value={u} onChange={(e) => setU(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} placeholder="Masukkan username"
-                style={{ width: "100%", padding: "9px 12px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" }} />
+                style={{ ...inputA, padding: "9px 12px", fontSize: "14px", outline: "none" }} />
             </div>
             <div style={{ marginBottom: "14px" }}>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: "#4b5563", marginBottom: "5px" }}>Password</label>
+              <label style={labelA}>Password</label>
               <input type="password" value={p} onChange={(e) => setP(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} placeholder="Masukkan password"
-                style={{ width: "100%", padding: "9px 12px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" }} />
+                style={{ ...inputA, padding: "9px 12px", fontSize: "14px", outline: "none" }} />
             </div>
             {err && <p style={{ color: "#dc2626", fontSize: "12px", textAlign: "center", marginBottom: "10px" }}>{err}</p>}
             <GreenBtn onClick={login} style={{ width: "100%", padding: "11px", fontSize: "14px" }}>Masuk</GreenBtn>
