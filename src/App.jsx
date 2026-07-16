@@ -10,6 +10,40 @@ import { requestPushPermission } from "./firebaseClient";
 // build and the full F:\sistem-nilai-mdt-desktop clone, so behavior there is unchanged.
 const JADWAL_ONLY = import.meta.env.VITE_JADWAL_ONLY === "true";
 
+// A separate, narrowly-scoped Supabase pointer for the "Kirim ke Web App" bridge
+// (Susun Jadwal's Export/Import — see summarizeJadwalDiff/jadwal-cetak) — deliberately
+// NOT the same VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY that gates `supabase` in
+// supabaseClient.js. Setting those would flip the whole app (every useRemoteState key —
+// nilai, kepribadian, siswa, ...) into live online sync, defeating the offline desktop
+// build's entire point. VITE_JADWAL_SYNC_URL/KEY let JUST this one feature reach the
+// network (insert/read/delete on the `jadwal_kiriman` table only) while everything else
+// stays local. On the normal web app, which already has real Supabase credentials, this
+// simply falls back to the same ones — no extra env vars needed there.
+const JADWAL_SYNC_URL = import.meta.env.VITE_JADWAL_SYNC_URL || import.meta.env.VITE_SUPABASE_URL || "";
+const JADWAL_SYNC_KEY = import.meta.env.VITE_JADWAL_SYNC_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const jadwalSyncEnabled = !!(JADWAL_SYNC_URL && JADWAL_SYNC_KEY);
+async function sendJadwalKiriman(jadwal, source) {
+  const res = await fetch(`${JADWAL_SYNC_URL}/rest/v1/jadwal_kiriman`, {
+    method: "POST",
+    headers: { apikey: JADWAL_SYNC_KEY, Authorization: `Bearer ${JADWAL_SYNC_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ source: source || null, jadwal }),
+  });
+  if (!res.ok) throw new Error(`Gagal mengirim (HTTP ${res.status})`);
+}
+async function fetchJadwalKiriman() {
+  const res = await fetch(`${JADWAL_SYNC_URL}/rest/v1/jadwal_kiriman?select=id,created_at,source,jadwal&order=created_at.desc`, {
+    headers: { apikey: JADWAL_SYNC_KEY, Authorization: `Bearer ${JADWAL_SYNC_KEY}` },
+  });
+  if (!res.ok) throw new Error(`Gagal memuat daftar kiriman (HTTP ${res.status})`);
+  return res.json();
+}
+async function deleteJadwalKiriman(id) {
+  await fetch(`${JADWAL_SYNC_URL}/rest/v1/jadwal_kiriman?id=eq.${id}`, {
+    method: "DELETE",
+    headers: { apikey: JADWAL_SYNC_KEY, Authorization: `Bearer ${JADWAL_SYNC_KEY}` },
+  }).catch(() => {}); // best-effort cleanup — a leftover row just means it's still listed next time, not a correctness issue
+}
+
 const DEFAULT_CL = {
   aw1a: { name: "Awwaliyah I A", sh: "AW I A", wali: "Aan Widianto, M.Pd", mapel: ["Praktek Aqoid","Tauhid","Fiqih Praktik","Fiqih","Akhlaq","Imla'","Tarikh"] },
   aw1b: { name: "Awwaliyah I B", sh: "AW I B", wali: "Idris, S.Pd", mapel: ["Praktek Aqoid","Tauhid","Fiqih Praktik","Fiqih","Akhlaq","Imla'","Tarikh"] },
@@ -2980,6 +3014,11 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
   const [importPreview, setImportPreview] = useState(null); // { data, diff }
   const [importError, setImportError] = useState("");
   const [importSelected, setImportSelected] = useState(() => new Set()); // ids from importPreview.diff the admin has kept checked
+  const [sendStatus, setSendStatus] = useState(""); // "", "sending", "sent", "error"
+  const [showKiriman, setShowKiriman] = useState(false);
+  const [kirimanList, setKirimanList] = useState(null); // null = not loaded yet
+  const [kirimanLoading, setKirimanLoading] = useState(false);
+  const [kirimanError, setKirimanError] = useState("");
 
   const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
 
@@ -3261,6 +3300,33 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
     a.click();
     URL.revokeObjectURL(url);
   };
+  // "Kirim" — the online-bridge counterpart to Export. Posts straight to the
+  // `jadwal_kiriman` inbox table instead of going through a file; the web app's Import
+  // UI lists these alongside "pilih file dari komputer". Only shown when
+  // `jadwalSyncEnabled` (desktop build needs VITE_JADWAL_SYNC_URL/KEY set explicitly).
+  const doSendKiriman = async () => {
+    setSendStatus("sending");
+    try {
+      await sendJadwalKiriman(liveJADWAL, LEMBAGA?.namaSingkat || "MDT");
+      setSendStatus("sent");
+      setTimeout(() => setSendStatus(""), 3000);
+    } catch {
+      setSendStatus("error");
+      setTimeout(() => setSendStatus(""), 4000);
+    }
+  };
+  const loadKirimanList = async () => {
+    setKirimanLoading(true);
+    setKirimanError("");
+    try {
+      setKirimanList(await fetchJadwalKiriman());
+    } catch {
+      setKirimanError("Gagal memuat daftar kiriman — periksa koneksi internet.");
+      setKirimanList([]);
+    } finally {
+      setKirimanLoading(false);
+    }
+  };
   const onPickImportFile = (e) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-picking the same file again later
@@ -3292,6 +3358,21 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  };
+  // Opens the same diff-confirmation modal as a file pick, just sourced from a
+  // `jadwal_kiriman` row instead — `kirimanId` tags along so applyImport can delete the
+  // row once its changes are actually applied, keeping the inbox from piling up.
+  const pickKiriman = (row) => {
+    const incoming = row.jadwal;
+    if (!incoming || typeof incoming !== "object" || !incoming.grid) {
+      setImportError("Kiriman ini tidak dikenali — mungkin dari versi aplikasi yang berbeda.");
+      return;
+    }
+    const diff = summarizeJadwalDiff(liveJADWAL, incoming, putraKelas, putriKelas);
+    setImportPreview({ data: incoming, diff, kirimanId: row.id });
+    setImportSelected(new Set(jadwalDiffAllIds(diff)));
+    setImportError("");
+    setShowKiriman(false);
   };
   // The only place Import actually writes anything — everything before this is just
   // reading a file, computing a diff, and letting the admin check/uncheck individual
@@ -3351,6 +3432,10 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
           ketentuan: diff.ketentuanChanged && sel.has("ketentuan") ? (d.ketentuan || p.ketentuan) : p.ketentuan,
         };
       });
+    }
+    if (importPreview.kirimanId) {
+      deleteJadwalKiriman(importPreview.kirimanId);
+      setKirimanList((list) => (list ? list.filter((r) => r.id !== importPreview.kirimanId) : list));
     }
     setImportPreview(null);
   };
@@ -3724,13 +3809,51 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
 
           <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "20px", textAlign: "center" }}>
             <h3 style={{ fontSize: "13px", fontWeight: 500, color: "#111827", marginTop: 0, marginBottom: "4px" }}>🔄 Sinkron Offline ↔ Online</h3>
-            <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Pindahkan data Jadwal antara aplikasi ini dan versi desktop offline lewat file — Import selalu menampilkan pratinjau perubahan dulu, tidak langsung diterapkan sampai dikonfirmasi.</p>
+            <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Pindahkan data Jadwal antara aplikasi ini dan versi desktop offline lewat file, atau langsung lewat internet dengan "Kirim". Import/Terima selalu menampilkan pratinjau perubahan dulu, tidak langsung diterapkan sampai dikonfirmasi.</p>
             <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "10px", flexWrap: "wrap" }}>
               <button onClick={doExportJSON} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📤 Export Data Jadwal (.json)</button>
-              <button onClick={() => importFileRef.current?.click()} style={{ padding: "9px 20px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📥 Import Data Jadwal (.json)</button>
+              <button onClick={() => importFileRef.current?.click()} style={{ padding: "9px 20px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📥 Import dari File (.json)</button>
               <input ref={importFileRef} type="file" accept="application/json,.json" onChange={onPickImportFile} style={{ display: "none" }} />
+              {jadwalSyncEnabled && (
+                <button onClick={doSendKiriman} disabled={sendStatus === "sending"} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#065f46,#059669)", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: sendStatus === "sending" ? "default" : "pointer", opacity: sendStatus === "sending" ? 0.7 : 1 }}>
+                    {sendStatus === "sending" ? "⏳ Mengirim..." : sendStatus === "sent" ? "✓ Terkirim" : "🌐 Kirim ke Web App"}
+                  </button>
+              )}
+              {jadwalSyncEnabled && (
+                <button onClick={() => { setShowKiriman((s) => !s); if (!showKiriman) loadKirimanList(); }} style={{ padding: "9px 20px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>🌐 Kiriman dari Desktop{kirimanList && kirimanList.length > 0 ? ` (${kirimanList.length})` : ""}</button>
+              )}
             </div>
+            {sendStatus === "error" && <p style={{ fontSize: "12px", color: "#b91c1c", marginTop: "10px", marginBottom: 0 }}>⚠️ Gagal mengirim — periksa koneksi internet.</p>}
             {importError && <p style={{ fontSize: "12px", color: "#b91c1c", marginTop: "10px", marginBottom: 0 }}>⚠️ {importError}</p>}
+
+            {showKiriman && (
+              <div style={{ marginTop: "14px", textAlign: "left", border: "1px solid #e5e7eb", borderRadius: "8px", overflow: "hidden" }}>
+                <div style={{ padding: "8px 12px", background: "#f9fafb", borderBottom: "1px solid #e5e7eb", fontSize: "11.5px", fontWeight: 500, color: "#374151", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>Kiriman dari perangkat lain</span>
+                  <button onClick={loadKirimanList} style={{ fontSize: "11px", color: "#047857", background: "none", border: "none", cursor: "pointer", padding: 0, fontWeight: 500 }}>🔄 Muat ulang</button>
+                </div>
+                {kirimanLoading ? (
+                  <p style={{ padding: "12px", fontSize: "12px", color: "#9ca3af", margin: 0 }}>Memuat...</p>
+                ) : kirimanError ? (
+                  <p style={{ padding: "12px", fontSize: "12px", color: "#b91c1c", margin: 0 }}>{kirimanError}</p>
+                ) : kirimanList && kirimanList.length === 0 ? (
+                  <p style={{ padding: "12px", fontSize: "12px", color: "#9ca3af", margin: 0 }}>Belum ada kiriman.</p>
+                ) : (
+                  (kirimanList || []).map((row) => (
+                    <div key={row.id} style={{ padding: "8px 12px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                      <div style={{ fontSize: "12px", color: "#374151" }}>
+                        <strong>{row.source || "Tanpa nama"}</strong>
+                        <span style={{ color: "#9ca3af", marginLeft: "8px" }}>{new Date(row.created_at).toLocaleString("id-ID")}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                        <button onClick={() => pickKiriman(row)} style={{ padding: "5px 12px", background: THEME.green[900], color: "white", border: "none", borderRadius: "6px", fontSize: "11.5px", fontWeight: 500, cursor: "pointer" }}>Tinjau</button>
+                        <button onClick={() => { deleteJadwalKiriman(row.id); setKirimanList((list) => list.filter((r) => r.id !== row.id)); }} style={{ padding: "5px 10px", background: "white", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: "6px", fontSize: "11.5px", cursor: "pointer" }}>Hapus</button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
