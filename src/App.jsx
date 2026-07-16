@@ -4,6 +4,12 @@ import QRCode from "qrcode";
 import { supabase } from "./supabaseClient";
 import { requestPushPermission } from "./firebaseClient";
 
+// Build-time switch for the standalone "Susun Jadwal only" offline desktop build
+// (E:\sistem-nilai-mdt-desktop-jadwal) — trims every role's nav down to just Susun
+// Jadwal (superadmin) / Jadwal Pelajaran (wk, guru); unset (default) in the normal web
+// build and the full F:\sistem-nilai-mdt-desktop clone, so behavior there is unchanged.
+const JADWAL_ONLY = import.meta.env.VITE_JADWAL_ONLY === "true";
+
 const DEFAULT_CL = {
   aw1a: { name: "Awwaliyah I A", sh: "AW I A", wali: "Aan Widianto, M.Pd", mapel: ["Praktek Aqoid","Tauhid","Fiqih Praktik","Fiqih","Akhlaq","Imla'","Tarikh"] },
   aw1b: { name: "Awwaliyah I B", sh: "AW I B", wali: "Idris, S.Pd", mapel: ["Praktek Aqoid","Tauhid","Fiqih Praktik","Fiqih","Akhlaq","Imla'","Tarikh"] },
@@ -1456,59 +1462,60 @@ function GroupTabBar({ items, activeKey, onSelect }) {
 // Pelajaran group plus a single "Input Nilai UAS" item. JADWAL_PELAJARAN_KEYS is how
 // the render layer tells which of wk/guru's two "islands" a given key belongs to.
 const JADWAL_PELAJARAN_KEYS = ["pribadi", "hari", "kelas", "semua", "rekap"];
+const SUSUN_JADWAL_ITEMS = [
+  { key: "jadwal-grid", label: "Jadwal", icon: "🗓️" },
+  { key: "jadwal-master", label: "Guru & Mapel", icon: "🧑‍🏫" },
+  { key: "jadwal-ketentuan", label: "Ketentuan Guru", icon: "📋" },
+  { key: "jadwal-cetak", label: "Cetak & Export", icon: "🖨️" },
+];
+const JADWAL_PELAJARAN_ITEMS = [
+  { key: "pribadi", label: "Jadwal Pribadi", icon: "👤" },
+  { key: "hari", label: "Per Hari", icon: "📅" },
+  { key: "kelas", label: "Per Kelas", icon: "🏫" },
+  { key: "semua", label: "Semua Jadwal", icon: "🗓️" },
+  { key: "rekap", label: "Rekap Saya", icon: "📊" },
+];
 function buildNavGroups(user, isSuperAdmin) {
   if (!user) return [];
   if (user.role === "admin" || user.role === "superadmin") {
     return [
-      { type: "item", key: "dashboard", label: "Dashboard", icon: "📊" },
-      { type: "group", key: "data-sekolah", label: "Data Sekolah", icon: "🏫", items: [
-        { key: "kelas", label: "Kelas", icon: "🏫" },
-        { key: "wali", label: "Wali Kelas", icon: "👤" },
-        { key: "siswa", label: "Data Siswa", icon: "🧑‍🎓" },
-        { key: "mapel", label: "Mata Pelajaran", icon: "📚" },
-        { key: "guru", label: "Penugasan Guru", icon: "🧑‍🏫" },
-      ] },
-      { type: "item", key: "kehadiran", label: "Rekap Kehadiran", icon: "✅" },
-      ...(isSuperAdmin ? [
-        { type: "group", key: "susun-jadwal", label: "Susun Jadwal", icon: "🗓️", items: [
-          { key: "jadwal-grid", label: "Jadwal", icon: "🗓️" },
-          { key: "jadwal-master", label: "Guru & Mapel", icon: "🧑‍🏫" },
-          { key: "jadwal-ketentuan", label: "Ketentuan Guru", icon: "📋" },
-          { key: "jadwal-cetak", label: "Cetak & Export", icon: "🖨️" },
+      ...(JADWAL_ONLY ? [] : [
+        { type: "item", key: "dashboard", label: "Dashboard", icon: "📊" },
+        { type: "group", key: "data-sekolah", label: "Data Sekolah", icon: "🏫", items: [
+          { key: "kelas", label: "Kelas", icon: "🏫" },
+          { key: "wali", label: "Wali Kelas", icon: "👤" },
+          { key: "siswa", label: "Data Siswa", icon: "🧑‍🎓" },
+          { key: "mapel", label: "Mata Pelajaran", icon: "📚" },
+          { key: "guru", label: "Penugasan Guru", icon: "🧑‍🏫" },
         ] },
-        { type: "item", key: "identitas", label: "Identitas Lembaga", icon: "🏛️" },
+        { type: "item", key: "kehadiran", label: "Rekap Kehadiran", icon: "✅" },
+      ]),
+      ...(isSuperAdmin ? [
+        { type: "group", key: "susun-jadwal", label: "Susun Jadwal", icon: "🗓️", items: SUSUN_JADWAL_ITEMS },
+        ...(JADWAL_ONLY ? [] : [{ type: "item", key: "identitas", label: "Identitas Lembaga", icon: "🏛️" }]),
       ] : []),
     ];
   }
   if (user.role === "wk") {
     return [
-      { type: "group", key: "jadwal-pelajaran", label: "Jadwal Pelajaran", icon: "🗓️", items: [
-        { key: "pribadi", label: "Jadwal Pribadi", icon: "👤" },
-        { key: "hari", label: "Per Hari", icon: "📅" },
-        { key: "kelas", label: "Per Kelas", icon: "🏫" },
-        { key: "semua", label: "Semua Jadwal", icon: "🗓️" },
-        { key: "rekap", label: "Rekap Saya", icon: "📊" },
-      ] },
-      { type: "group", key: "rapor", label: "Rapor", icon: "📋", items: [
-        { key: "leger", label: "Leger Nilai", icon: "📋" },
-        { key: "kepribadian", label: "Kepribadian & Absensi", icon: "⭐" },
-        { key: "raport", label: "Cetak Raport", icon: "🖨️" },
-      ] },
+      { type: "group", key: "jadwal-pelajaran", label: "Jadwal Pelajaran", icon: "🗓️", items: JADWAL_PELAJARAN_ITEMS },
+      ...(JADWAL_ONLY ? [] : [
+        { type: "group", key: "rapor", label: "Rapor", icon: "📋", items: [
+          { key: "leger", label: "Leger Nilai", icon: "📋" },
+          { key: "kepribadian", label: "Kepribadian & Absensi", icon: "⭐" },
+          { key: "raport", label: "Cetak Raport", icon: "🖨️" },
+        ] },
+      ]),
     ];
   }
   if (user.role === "guru") {
     return [
-      { type: "group", key: "jadwal-pelajaran", label: "Jadwal Pelajaran", icon: "🗓️", items: [
-        { key: "pribadi", label: "Jadwal Pribadi", icon: "👤" },
-        { key: "hari", label: "Per Hari", icon: "📅" },
-        { key: "kelas", label: "Per Kelas", icon: "🏫" },
-        { key: "semua", label: "Semua Jadwal", icon: "🗓️" },
-        { key: "rekap", label: "Rekap Saya", icon: "📊" },
-      ] },
-      { type: "item", key: "nilai", label: "Input Nilai UAS", icon: "📝" },
+      { type: "group", key: "jadwal-pelajaran", label: "Jadwal Pelajaran", icon: "🗓️", items: JADWAL_PELAJARAN_ITEMS },
+      ...(JADWAL_ONLY ? [] : [{ type: "item", key: "nilai", label: "Input Nilai UAS", icon: "📝" }]),
     ];
   }
   if (user.role === "tu") {
+    if (JADWAL_ONLY) return [];
     return [
       { type: "group", key: "kehadiran-guru", label: "Kehadiran Guru", icon: "✅", items: [
         { key: "isi", label: "Isi Kehadiran", icon: "✏️" },
@@ -1529,7 +1536,8 @@ function navKeysOf(sections) {
 function defaultNavGroupKey(user) {
   if (!user) return null;
   if (user.role === "wk" || user.role === "guru") return "jadwal-pelajaran";
-  if (user.role === "tu") return "kehadiran-guru";
+  if (user.role === "tu") return JADWAL_ONLY ? null : "kehadiran-guru";
+  if (JADWAL_ONLY && (user.role === "admin" || user.role === "superadmin")) return "susun-jadwal";
   return null;
 }
 // The single "home" destination for each role — same key the app lands on right after
@@ -1537,7 +1545,7 @@ function defaultNavGroupKey(user) {
 // explicit request) returns here rather than tracking real browser-style history.
 function homeNavKey(user) {
   if (!user) return "";
-  if (user.role === "admin" || user.role === "superadmin") return "dashboard";
+  if (user.role === "admin" || user.role === "superadmin") return JADWAL_ONLY ? "jadwal-grid" : "dashboard";
   if (user.role === "wk" || user.role === "guru") return "pribadi";
   if (user.role === "tu") return "isi";
   return "";
@@ -5588,6 +5596,8 @@ export default function App() {
             <div style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
               {viewingArchive ? (
                 <ArchiveView archives={archives} LEMBAGA={LEMBAGA} onClose={() => setViewingArchive(false)} />
+              ) : JADWAL_ONLY && validNavKeys.length === 0 ? (
+                <div style={{ padding: "40px 20px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>Fitur ini tidak tersedia di versi desktop Jadwal ini.</div>
               ) : (
                 <>
                   {!isHome && (
@@ -5606,7 +5616,7 @@ export default function App() {
                   {user.role === "guru" && !inJadwalSection && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
                   {user.role === "wk" && !inJadwalSection && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} setTab={setNavKey} />}
                   {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} ACCS={ACCS} deviceTokens={deviceTokens} setNotifikasi={setNotifikasi} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
-                  {user.role === "tu" && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} ACCS={ACCS} deviceTokens={deviceTokens} setNotifikasi={setNotifikasi} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
+                  {user.role === "tu" && !JADWAL_ONLY && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} ACCS={ACCS} deviceTokens={deviceTokens} setNotifikasi={setNotifikasi} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
                 </>
               )}
             </div>
