@@ -455,49 +455,60 @@ function computeJadwalConflicts(JADWAL, putriKelas = [], mirror = { putraToPutri
 
 // Summarizes what would change if `incoming` (an imported JADWAL, e.g. from the offline
 // desktop build's Export) replaced `current` — used by the Export/Import flow's
-// confirmation dialog so nothing is applied silently. Counts rather than an exhaustive
-// cell-by-cell list, since a full schedule re-import can easily touch 100+ cells.
-function summarizeJadwalDiff(current, incoming) {
-  const cellDiffCount = (curGrid, newGrid, kelasKodes) => {
-    let n = 0;
+// confirmation dialog so nothing is applied silently. Every grid cell / guru / mapel
+// change is listed individually (not just counted) with a stable `id`, so the confirm
+// modal can offer a checkbox per change and apply only the ones the admin keeps checked.
+function summarizeJadwalDiff(current, incoming, putraKelas = [], putriKelas = []) {
+  const guruByKode = Object.fromEntries([...(current.guru || []), ...(incoming.guru || [])].map((g) => [g.kode, g]));
+  const mapelByKode = Object.fromEntries([...(current.mapel || []), ...(incoming.mapel || [])].map((m) => [m.kode, m]));
+  const describeCell = (cell) => ({
+    g: cell?.g || "", m: cell?.m || "",
+    gNama: cell?.g ? (guruByKode[cell.g]?.nama || cell.g) : "-",
+    mNama: cell?.m ? (mapelByKode[cell.m]?.nama || cell.m) : "-",
+  });
+
+  const gridCells = [];
+  const collectCells = (curGrid, newGrid, kelasList, layer) => {
     JADWAL_HARI.forEach((hari) => {
       JADWAL_JAM.forEach((jam) => {
-        kelasKodes.forEach((k) => {
-          const a = curGrid?.[hari]?.[jam.kode]?.[k];
-          const b = newGrid?.[hari]?.[jam.kode]?.[k];
-          if (JSON.stringify(a || null) !== JSON.stringify(b || null)) n++;
+        (kelasList || []).forEach((k) => {
+          const a = curGrid?.[hari]?.[jam.kode]?.[k.kode] || null;
+          const b = newGrid?.[hari]?.[jam.kode]?.[k.kode] || null;
+          if (JSON.stringify(a) === JSON.stringify(b)) return;
+          gridCells.push({
+            id: `cell|${layer}|${hari}|${jam.kode}|${k.kode}`,
+            layer, hari, jamKode: jam.kode, waktu: jam.waktu, kelasKode: k.kode, kelasLabel: k.label,
+            before: describeCell(a), after: describeCell(b),
+          });
         });
       });
     });
-    return n;
   };
-  const putraKodes = Object.keys({ ...(current.kelasPutra || {}), ...(incoming.kelasPutra || {}) });
-  const putriKodes = [...new Set([
-    ...Object.values(current.grid || {}).flatMap((h) => Object.values(h).flatMap((j) => Object.keys(j))),
-    ...Object.keys(current.gridPutri?.SABTU?.I || {}), ...Object.keys(incoming.gridPutri?.SABTU?.I || {}),
-  ])];
+  collectCells(current.grid, incoming.grid, putraKelas, "putra");
+  collectCells(current.gridPutri, incoming.gridPutri, putriKelas, "putri");
 
   const oldGuru = current.guru || [], newGuru = incoming.guru || [];
   const oldGuruKode = new Set(oldGuru.map((g) => g.kode));
   const newGuruKode = new Set(newGuru.map((g) => g.kode));
-  const guruAdded = newGuru.filter((g) => !oldGuruKode.has(g.kode)).map((g) => g.nama);
-  const guruRemoved = oldGuru.filter((g) => !newGuruKode.has(g.kode)).map((g) => g.nama);
-  const guruModified = newGuru.filter((g) => {
-    const old = oldGuru.find((og) => og.kode === g.kode);
-    return old && JSON.stringify(old) !== JSON.stringify(g);
-  }).map((g) => g.nama);
+  const guruChanges = [
+    ...newGuru.filter((g) => !oldGuruKode.has(g.kode)).map((g) => ({ id: `guru-add|${g.kode}`, type: "added", kode: g.kode, label: g.nama, after: g })),
+    ...oldGuru.filter((g) => !newGuruKode.has(g.kode)).map((g) => ({ id: `guru-del|${g.kode}`, type: "removed", kode: g.kode, label: g.nama })),
+    ...newGuru.filter((g) => {
+      const old = oldGuru.find((og) => og.kode === g.kode);
+      return old && JSON.stringify(old) !== JSON.stringify(g);
+    }).map((g) => ({ id: `guru-mod|${g.kode}`, type: "modified", kode: g.kode, label: g.nama, before: oldGuru.find((og) => og.kode === g.kode), after: g })),
+  ];
 
   const oldMapel = current.mapel || [], newMapel = incoming.mapel || [];
   const oldMapelKode = new Set(oldMapel.map((m) => m.kode));
   const newMapelKode = new Set(newMapel.map((m) => m.kode));
-  const mapelAdded = newMapel.filter((m) => !oldMapelKode.has(m.kode)).map((m) => m.nama);
-  const mapelRemoved = oldMapel.filter((m) => !newMapelKode.has(m.kode)).map((m) => m.nama);
+  const mapelChanges = [
+    ...newMapel.filter((m) => !oldMapelKode.has(m.kode)).map((m) => ({ id: `mapel-add|${m.kode}`, type: "added", kode: m.kode, label: m.nama, after: m })),
+    ...oldMapel.filter((m) => !newMapelKode.has(m.kode)).map((m) => ({ id: `mapel-del|${m.kode}`, type: "removed", kode: m.kode, label: m.nama })),
+  ];
 
   return {
-    gridChanges: cellDiffCount(current.grid, incoming.grid, putraKodes),
-    gridPutriChanges: cellDiffCount(current.gridPutri, incoming.gridPutri, putriKodes),
-    guruAdded, guruRemoved, guruModified,
-    mapelAdded, mapelRemoved,
+    gridCells, guruChanges, mapelChanges,
     ketentuanChanged: JSON.stringify(current.ketentuan || {}) !== JSON.stringify(incoming.ketentuan || {}),
     piketPutraChanged: JSON.stringify(current.piketPutra || {}) !== JSON.stringify(incoming.piketPutra || {}),
     piketPutriChanged: JSON.stringify(current.piketPutri || {}) !== JSON.stringify(incoming.piketPutri || {}),
@@ -505,9 +516,18 @@ function summarizeJadwalDiff(current, incoming) {
   };
 }
 function jadwalDiffIsEmpty(d) {
-  return d.gridChanges === 0 && d.gridPutriChanges === 0 && d.guruAdded.length === 0 && d.guruRemoved.length === 0 &&
-    d.guruModified.length === 0 && d.mapelAdded.length === 0 && d.mapelRemoved.length === 0 &&
+  return d.gridCells.length === 0 && d.guruChanges.length === 0 && d.mapelChanges.length === 0 &&
     !d.ketentuanChanged && !d.piketPutraChanged && !d.piketPutriChanged && !d.kelasLabelChanged;
+}
+// Every checkbox-able id in a diff, used to default the confirm modal to "everything
+// selected" and to let "Pilih Semua"/"Batalkan Semua" operate without repeating this list.
+function jadwalDiffAllIds(d) {
+  const ids = [...d.gridCells.map((c) => c.id), ...d.guruChanges.map((c) => c.id), ...d.mapelChanges.map((c) => c.id)];
+  if (d.ketentuanChanged) ids.push("ketentuan");
+  if (d.piketPutraChanged) ids.push("piketPutra");
+  if (d.piketPutriChanged) ids.push("piketPutri");
+  if (d.kelasLabelChanged) ids.push("kelasLabel");
+  return ids;
 }
 
 const KELAS_ORDER = ["aw1a","aw1b","aw2a","aw2b","aw3a","ws1","ws2"];
@@ -2959,6 +2979,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
   const importFileRef = useRef(null);
   const [importPreview, setImportPreview] = useState(null); // { data, diff }
   const [importError, setImportError] = useState("");
+  const [importSelected, setImportSelected] = useState(() => new Set()); // ids from importPreview.diff the admin has kept checked
 
   const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
 
@@ -3254,7 +3275,9 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
           setImportPreview(null);
           return;
         }
-        setImportPreview({ data: incoming, diff: summarizeJadwalDiff(liveJADWAL, incoming) });
+        const diff = summarizeJadwalDiff(liveJADWAL, incoming, putraKelas, putriKelas);
+        setImportPreview({ data: incoming, diff });
+        setImportSelected(new Set(jadwalDiffAllIds(diff))); // start with everything checked, admin unchecks what they don't want
         setImportError("");
       } catch {
         setImportError("Gagal membaca file — pastikan file JSON hasil \"Export Data Jadwal\", bukan file lain.");
@@ -3263,19 +3286,72 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
     };
     reader.readAsText(file);
   };
+  const toggleImportSelected = (id) => {
+    setImportSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   // The only place Import actually writes anything — everything before this is just
-  // reading a file and computing a diff to show the admin. Grid/piket cells land in the
-  // same local draft the on-screen grid edits use (so Undo + the existing "Simpan" gate
-  // still apply); guru/mapel/ketentuan/kelas-label master data saves immediately, same as
-  // every other edit on the "Guru & Mapel"/"Ketentuan Guru" tabs.
+  // reading a file, computing a diff, and letting the admin check/uncheck individual
+  // changes. Only ids still in `importSelected` at this point get applied. Grid/piket
+  // cells land in the same local draft the on-screen grid edits use (so Undo + the
+  // existing "Simpan" gate still apply); guru/mapel/ketentuan/kelas-label master data
+  // saves immediately, same as every other edit on the "Guru & Mapel"/"Ketentuan Guru" tabs.
   const applyImport = () => {
     if (!importPreview) return;
-    const d = importPreview.data;
-    pushHistory();
-    setDraftGrid({ grid: d.grid || {}, gridPutri: d.gridPutri || {}, piketPutra: d.piketPutra || {}, piketPutri: d.piketPutri || {} });
-    setDirty(true);
-    logChange("📥 Import data jadwal dari file");
-    setJADWAL((p) => ({ ...p, guru: d.guru || p.guru, mapel: d.mapel || p.mapel, kelasPutra: d.kelasPutra || p.kelasPutra, kelasPutriNama: d.kelasPutriNama || p.kelasPutriNama, ketentuan: d.ketentuan || p.ketentuan }));
+    const { data: d, diff } = importPreview;
+    const sel = importSelected;
+    const appliedCells = diff.gridCells.filter((c) => sel.has(c.id));
+
+    if (appliedCells.length > 0 || (diff.piketPutraChanged && sel.has("piketPutra")) || (diff.piketPutriChanged && sel.has("piketPutri"))) {
+      const newGrid = JSON.parse(JSON.stringify(draftGrid.grid || {}));
+      const newGridPutri = JSON.parse(JSON.stringify(draftGrid.gridPutri || {}));
+      appliedCells.forEach((c) => {
+        const target = c.layer === "putra" ? newGrid : newGridPutri;
+        target[c.hari] = { ...(target[c.hari] || {}) };
+        target[c.hari][c.jamKode] = { ...(target[c.hari][c.jamKode] || {}) };
+        if (c.after.g || c.after.m) target[c.hari][c.jamKode][c.kelasKode] = { g: c.after.g, m: c.after.m };
+        else delete target[c.hari][c.jamKode][c.kelasKode];
+      });
+      pushHistory();
+      setDraftGrid((prev) => ({
+        ...prev,
+        grid: newGrid,
+        gridPutri: newGridPutri,
+        piketPutra: diff.piketPutraChanged && sel.has("piketPutra") ? (d.piketPutra || {}) : prev.piketPutra,
+        piketPutri: diff.piketPutriChanged && sel.has("piketPutri") ? (d.piketPutri || {}) : prev.piketPutri,
+      }));
+      setDirty(true);
+      logChange(`📥 Import: ${appliedCells.length} sel jadwal diterapkan`);
+    }
+
+    const guruMapelTouched = diff.guruChanges.some((c) => sel.has(c.id)) || diff.mapelChanges.some((c) => sel.has(c.id)) ||
+      (diff.ketentuanChanged && sel.has("ketentuan")) || (diff.kelasLabelChanged && sel.has("kelasLabel"));
+    if (guruMapelTouched) {
+      setJADWAL((p) => {
+        let guru = p.guru;
+        diff.guruChanges.forEach((c) => {
+          if (!sel.has(c.id)) return;
+          if (c.type === "added") guru = [...guru, c.after];
+          else if (c.type === "removed") guru = guru.filter((g) => g.kode !== c.kode);
+          else guru = guru.map((g) => (g.kode === c.kode ? c.after : g));
+        });
+        let mapel = p.mapel;
+        diff.mapelChanges.forEach((c) => {
+          if (!sel.has(c.id)) return;
+          if (c.type === "added") mapel = [...mapel, c.after];
+          else if (c.type === "removed") mapel = mapel.filter((m) => m.kode !== c.kode);
+        });
+        return {
+          ...p, guru, mapel,
+          kelasPutra: diff.kelasLabelChanged && sel.has("kelasLabel") ? (d.kelasPutra || p.kelasPutra) : p.kelasPutra,
+          kelasPutriNama: diff.kelasLabelChanged && sel.has("kelasLabel") ? (d.kelasPutriNama || p.kelasPutriNama) : p.kelasPutriNama,
+          ketentuan: diff.ketentuanChanged && sel.has("ketentuan") ? (d.ketentuan || p.ketentuan) : p.ketentuan,
+        };
+      });
+    }
     setImportPreview(null);
   };
 
@@ -3661,33 +3737,109 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
 
       {importPreview && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
-          <div style={{ background: "white", borderRadius: THEME.radius.lg, boxShadow: THEME.shadow.popover, maxWidth: "480px", width: "100%", maxHeight: "80vh", overflowY: "auto" }}>
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e7eb" }}>
+          <div style={{ background: "white", borderRadius: THEME.radius.lg, boxShadow: THEME.shadow.popover, maxWidth: "760px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e7eb", flexShrink: 0 }}>
               <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#111827", margin: 0 }}>Konfirmasi Import Data Jadwal</h3>
-              <p style={{ fontSize: "12px", color: "#9ca3af", margin: "4px 0 0" }}>Belum ada yang berubah — tinjau dulu, lalu klik "Terapkan" untuk menerapkan.</p>
+              <p style={{ fontSize: "12px", color: "#9ca3af", margin: "4px 0 0" }}>Belum ada yang berubah — centang perubahan yang ingin diterapkan, lalu klik "Terapkan". Yang tidak dicentang tetap seperti sekarang.</p>
             </div>
-            <div style={{ padding: "16px 20px" }}>
+            <div style={{ padding: "12px 20px", overflowY: "auto", flex: 1 }}>
               {jadwalDiffIsEmpty(importPreview.diff) ? (
                 <p style={{ fontSize: "13px", color: "#6b7280" }}>Tidak ada perbedaan — file ini identik dengan data yang sedang ditampilkan.</p>
               ) : (
-                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "12.5px", color: "#374151", lineHeight: 1.9 }}>
-                  {importPreview.diff.gridChanges > 0 && <li>{importPreview.diff.gridChanges} sel Jadwal Putra berubah</li>}
-                  {importPreview.diff.gridPutriChanges > 0 && <li>{importPreview.diff.gridPutriChanges} sel Jadwal Putri berubah</li>}
-                  {importPreview.diff.guruAdded.length > 0 && <li>Guru baru: {importPreview.diff.guruAdded.join(", ")}</li>}
-                  {importPreview.diff.guruRemoved.length > 0 && <li>Guru dihapus: {importPreview.diff.guruRemoved.join(", ")}</li>}
-                  {importPreview.diff.guruModified.length > 0 && <li>Guru diubah: {importPreview.diff.guruModified.join(", ")}</li>}
-                  {importPreview.diff.mapelAdded.length > 0 && <li>Mapel baru: {importPreview.diff.mapelAdded.join(", ")}</li>}
-                  {importPreview.diff.mapelRemoved.length > 0 && <li>Mapel dihapus: {importPreview.diff.mapelRemoved.join(", ")}</li>}
-                  {importPreview.diff.ketentuanChanged && <li>Ketentuan Guru berubah</li>}
-                  {importPreview.diff.piketPutraChanged && <li>Guru Piket Putra berubah</li>}
-                  {importPreview.diff.piketPutriChanged && <li>Guru Piket Putri berubah</li>}
-                  {importPreview.diff.kelasLabelChanged && <li>Label nama kelas berubah</li>}
-                </ul>
+                <>
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+                    <button onClick={() => setImportSelected(new Set(jadwalDiffAllIds(importPreview.diff)))} style={{ fontSize: "11px", color: "#047857", background: "none", border: "none", cursor: "pointer", padding: 0, fontWeight: 500 }}>Pilih Semua</button>
+                    <button onClick={() => setImportSelected(new Set())} style={{ fontSize: "11px", color: "#6b7280", background: "none", border: "none", cursor: "pointer", padding: 0, fontWeight: 500 }}>Batalkan Semua</button>
+                    <span style={{ fontSize: "11px", color: "#9ca3af", marginLeft: "auto" }}>{importSelected.size} dari {jadwalDiffAllIds(importPreview.diff).length} dipilih</span>
+                  </div>
+
+                  {importPreview.diff.gridCells.length > 0 && (
+                    <div style={{ marginBottom: "14px" }}>
+                      <div style={{ fontSize: "11.5px", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>🗓️ Sel Jadwal ({importPreview.diff.gridCells.length})</div>
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", overflow: "hidden" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11.5px" }}>
+                          <thead>
+                            <tr style={{ background: "#f9fafb" }}>
+                              <th style={{ padding: "5px 8px", textAlign: "left", width: "24px" }}></th>
+                              <th style={{ padding: "5px 8px", textAlign: "left" }}>Kelas</th>
+                              <th style={{ padding: "5px 8px", textAlign: "left" }}>Hari / Jam</th>
+                              <th style={{ padding: "5px 8px", textAlign: "left" }}>Sebelum</th>
+                              <th style={{ padding: "5px 8px", textAlign: "left" }}>Sesudah</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importPreview.diff.gridCells.map((c) => (
+                              <tr key={c.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                                <td style={{ padding: "5px 8px" }}><input type="checkbox" checked={importSelected.has(c.id)} onChange={() => toggleImportSelected(c.id)} /></td>
+                                <td style={{ padding: "5px 8px" }}>{c.kelasLabel} <span style={{ color: "#9ca3af" }}>({c.layer === "putra" ? "Putra" : "Putri"})</span></td>
+                                <td style={{ padding: "5px 8px" }}>{c.hari} · Jam {c.jamKode} <span style={{ color: "#9ca3af" }}>({c.waktu})</span></td>
+                                <td style={{ padding: "5px 8px", color: "#991b1b" }}>{c.before.gNama} — {c.before.mNama}</td>
+                                <td style={{ padding: "5px 8px", color: "#065f46" }}>{c.after.gNama} — {c.after.mNama}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {importPreview.diff.guruChanges.length > 0 && (
+                    <div style={{ marginBottom: "14px" }}>
+                      <div style={{ fontSize: "11.5px", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>🧑‍🏫 Guru</div>
+                      {importPreview.diff.guruChanges.map((c) => (
+                        <label key={c.id} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#374151", padding: "3px 0", cursor: "pointer" }}>
+                          <input type="checkbox" checked={importSelected.has(c.id)} onChange={() => toggleImportSelected(c.id)} />
+                          {c.type === "added" && <span>Guru baru: <strong>{c.label}</strong> ({c.kode})</span>}
+                          {c.type === "removed" && <span>Guru dihapus: <strong>{c.label}</strong> ({c.kode})</span>}
+                          {c.type === "modified" && <span>Guru diubah: <strong>{c.before?.nama}</strong> → <strong>{c.after?.nama}</strong> ({c.kode})</span>}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {importPreview.diff.mapelChanges.length > 0 && (
+                    <div style={{ marginBottom: "14px" }}>
+                      <div style={{ fontSize: "11.5px", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>📚 Mata Pelajaran</div>
+                      {importPreview.diff.mapelChanges.map((c) => (
+                        <label key={c.id} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#374151", padding: "3px 0", cursor: "pointer" }}>
+                          <input type="checkbox" checked={importSelected.has(c.id)} onChange={() => toggleImportSelected(c.id)} />
+                          {c.type === "added" ? <span>Mapel baru: <strong>{c.label}</strong> ({c.kode})</span> : <span>Mapel dihapus: <strong>{c.label}</strong> ({c.kode})</span>}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {(importPreview.diff.ketentuanChanged || importPreview.diff.piketPutraChanged || importPreview.diff.piketPutriChanged || importPreview.diff.kelasLabelChanged) && (
+                    <div>
+                      <div style={{ fontSize: "11.5px", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>⚙️ Lainnya</div>
+                      {importPreview.diff.ketentuanChanged && (
+                        <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#374151", padding: "3px 0", cursor: "pointer" }}>
+                          <input type="checkbox" checked={importSelected.has("ketentuan")} onChange={() => toggleImportSelected("ketentuan")} /> Ketentuan Guru berubah
+                        </label>
+                      )}
+                      {importPreview.diff.piketPutraChanged && (
+                        <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#374151", padding: "3px 0", cursor: "pointer" }}>
+                          <input type="checkbox" checked={importSelected.has("piketPutra")} onChange={() => toggleImportSelected("piketPutra")} /> Guru Piket Putra berubah
+                        </label>
+                      )}
+                      {importPreview.diff.piketPutriChanged && (
+                        <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#374151", padding: "3px 0", cursor: "pointer" }}>
+                          <input type="checkbox" checked={importSelected.has("piketPutri")} onChange={() => toggleImportSelected("piketPutri")} /> Guru Piket Putri berubah
+                        </label>
+                      )}
+                      {importPreview.diff.kelasLabelChanged && (
+                        <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#374151", padding: "3px 0", cursor: "pointer" }}>
+                          <input type="checkbox" checked={importSelected.has("kelasLabel")} onChange={() => toggleImportSelected("kelasLabel")} /> Label nama kelas berubah
+                        </label>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
-            <div style={{ padding: "12px 20px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+            <div style={{ padding: "12px 20px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: "8px", flexShrink: 0 }}>
               <button onClick={() => setImportPreview(null)} style={{ padding: "8px 16px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>Batal</button>
-              <GreenBtn onClick={applyImport}>✓ Terapkan</GreenBtn>
+              <GreenBtn onClick={applyImport} style={importSelected.size === 0 ? { opacity: 0.5, cursor: "default", pointerEvents: "none" } : {}}>✓ Terapkan ({importSelected.size})</GreenBtn>
             </div>
           </div>
         </div>
