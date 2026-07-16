@@ -453,6 +453,63 @@ function computeJadwalConflicts(JADWAL, putriKelas = [], mirror = { putraToPutri
   return conflicts;
 }
 
+// Summarizes what would change if `incoming` (an imported JADWAL, e.g. from the offline
+// desktop build's Export) replaced `current` — used by the Export/Import flow's
+// confirmation dialog so nothing is applied silently. Counts rather than an exhaustive
+// cell-by-cell list, since a full schedule re-import can easily touch 100+ cells.
+function summarizeJadwalDiff(current, incoming) {
+  const cellDiffCount = (curGrid, newGrid, kelasKodes) => {
+    let n = 0;
+    JADWAL_HARI.forEach((hari) => {
+      JADWAL_JAM.forEach((jam) => {
+        kelasKodes.forEach((k) => {
+          const a = curGrid?.[hari]?.[jam.kode]?.[k];
+          const b = newGrid?.[hari]?.[jam.kode]?.[k];
+          if (JSON.stringify(a || null) !== JSON.stringify(b || null)) n++;
+        });
+      });
+    });
+    return n;
+  };
+  const putraKodes = Object.keys({ ...(current.kelasPutra || {}), ...(incoming.kelasPutra || {}) });
+  const putriKodes = [...new Set([
+    ...Object.values(current.grid || {}).flatMap((h) => Object.values(h).flatMap((j) => Object.keys(j))),
+    ...Object.keys(current.gridPutri?.SABTU?.I || {}), ...Object.keys(incoming.gridPutri?.SABTU?.I || {}),
+  ])];
+
+  const oldGuru = current.guru || [], newGuru = incoming.guru || [];
+  const oldGuruKode = new Set(oldGuru.map((g) => g.kode));
+  const newGuruKode = new Set(newGuru.map((g) => g.kode));
+  const guruAdded = newGuru.filter((g) => !oldGuruKode.has(g.kode)).map((g) => g.nama);
+  const guruRemoved = oldGuru.filter((g) => !newGuruKode.has(g.kode)).map((g) => g.nama);
+  const guruModified = newGuru.filter((g) => {
+    const old = oldGuru.find((og) => og.kode === g.kode);
+    return old && JSON.stringify(old) !== JSON.stringify(g);
+  }).map((g) => g.nama);
+
+  const oldMapel = current.mapel || [], newMapel = incoming.mapel || [];
+  const oldMapelKode = new Set(oldMapel.map((m) => m.kode));
+  const newMapelKode = new Set(newMapel.map((m) => m.kode));
+  const mapelAdded = newMapel.filter((m) => !oldMapelKode.has(m.kode)).map((m) => m.nama);
+  const mapelRemoved = oldMapel.filter((m) => !newMapelKode.has(m.kode)).map((m) => m.nama);
+
+  return {
+    gridChanges: cellDiffCount(current.grid, incoming.grid, putraKodes),
+    gridPutriChanges: cellDiffCount(current.gridPutri, incoming.gridPutri, putriKodes),
+    guruAdded, guruRemoved, guruModified,
+    mapelAdded, mapelRemoved,
+    ketentuanChanged: JSON.stringify(current.ketentuan || {}) !== JSON.stringify(incoming.ketentuan || {}),
+    piketPutraChanged: JSON.stringify(current.piketPutra || {}) !== JSON.stringify(incoming.piketPutra || {}),
+    piketPutriChanged: JSON.stringify(current.piketPutri || {}) !== JSON.stringify(incoming.piketPutri || {}),
+    kelasLabelChanged: JSON.stringify(current.kelasPutra || {}) !== JSON.stringify(incoming.kelasPutra || {}) || JSON.stringify(current.kelasPutriNama || {}) !== JSON.stringify(incoming.kelasPutriNama || {}),
+  };
+}
+function jadwalDiffIsEmpty(d) {
+  return d.gridChanges === 0 && d.gridPutriChanges === 0 && d.guruAdded.length === 0 && d.guruRemoved.length === 0 &&
+    d.guruModified.length === 0 && d.mapelAdded.length === 0 && d.mapelRemoved.length === 0 &&
+    !d.ketentuanChanged && !d.piketPutraChanged && !d.piketPutriChanged && !d.kelasLabelChanged;
+}
+
 const KELAS_ORDER = ["aw1a","aw1b","aw2a","aw2b","aw3a","ws1","ws2"];
 const sortedKelas = (cl) => Object.keys(cl).sort((a, b) => {
   const ai = KELAS_ORDER.indexOf(a), bi = KELAS_ORDER.indexOf(b);
@@ -2895,6 +2952,13 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
   const [saved, setSaved] = useState(false);
   const [changeLog, setChangeLog] = useState([]);
   const [showChangeLog, setShowChangeLog] = useState(true);
+  // Export/Import JSON — lets a Super Admin move a full JADWAL snapshot between two
+  // separate installs (e.g. the offline desktop build at E:\sistem-nilai-mdt-desktop-jadwal
+  // and this online app) without either side auto-syncing: Import always stops at a diff
+  // preview and only applies once the admin explicitly confirms.
+  const importFileRef = useRef(null);
+  const [importPreview, setImportPreview] = useState(null); // { data, diff }
+  const [importError, setImportError] = useState("");
 
   const colorOf = (kode) => jadwalGuruColor(JADWAL, kode);
 
@@ -3161,6 +3225,58 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
   const doExcel = () => {
     const wb = buildJadwalExcel(liveJADWAL, LEMBAGA, SEM, putriKelas, putraKelas);
     XLSX.writeFile(wb, `Jadwal_Pelajaran_${SEM?.tipe === "ganjil" ? "Ganjil" : "Genap"}_${(SEM?.tahun || "").replace("/", "-")}.xlsx`);
+  };
+
+  // Export: dumps the full on-screen JADWAL (including any not-yet-"Simpan"-ed grid
+  // edits) as a .json file — the counterpart Import lives on whichever install (offline
+  // desktop or this web app) receives that file.
+  const doExportJSON = () => {
+    const payload = { exportedAt: new Date().toISOString(), source: LEMBAGA?.namaSingkat || "MDT", jadwal: liveJADWAL };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `jadwal-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const onPickImportFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file again later
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        const incoming = parsed && parsed.jadwal ? parsed.jadwal : parsed;
+        if (!incoming || typeof incoming !== "object" || !incoming.grid) {
+          setImportError("File tidak dikenali — pastikan ini file hasil \"Export Data Jadwal\".");
+          setImportPreview(null);
+          return;
+        }
+        setImportPreview({ data: incoming, diff: summarizeJadwalDiff(liveJADWAL, incoming) });
+        setImportError("");
+      } catch {
+        setImportError("Gagal membaca file — pastikan file JSON hasil \"Export Data Jadwal\", bukan file lain.");
+        setImportPreview(null);
+      }
+    };
+    reader.readAsText(file);
+  };
+  // The only place Import actually writes anything — everything before this is just
+  // reading a file and computing a diff to show the admin. Grid/piket cells land in the
+  // same local draft the on-screen grid edits use (so Undo + the existing "Simpan" gate
+  // still apply); guru/mapel/ketentuan/kelas-label master data saves immediately, same as
+  // every other edit on the "Guru & Mapel"/"Ketentuan Guru" tabs.
+  const applyImport = () => {
+    if (!importPreview) return;
+    const d = importPreview.data;
+    pushHistory();
+    setDraftGrid({ grid: d.grid || {}, gridPutri: d.gridPutri || {}, piketPutra: d.piketPutra || {}, piketPutri: d.piketPutri || {} });
+    setDirty(true);
+    logChange("📥 Import data jadwal dari file");
+    setJADWAL((p) => ({ ...p, guru: d.guru || p.guru, mapel: d.mapel || p.mapel, kelasPutra: d.kelasPutra || p.kelasPutra, kelasPutriNama: d.kelasPutriNama || p.kelasPutriNama, ketentuan: d.ketentuan || p.ketentuan }));
+    setImportPreview(null);
   };
 
   const cellSelect = { width: "34px", padding: "2px", border: "1px solid #d1d5db", borderRadius: "4px", fontSize: "10px" };
@@ -3525,9 +3641,54 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
               <button onClick={doExcel} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📥 Export Excel</button>
             </div>
           </div>
-          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", overflow: "hidden" }}>
+          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", overflow: "hidden", marginBottom: "14px" }}>
             <div style={{ padding: "10px 14px", borderBottom: "1px solid #e5e7eb", fontSize: "12px", fontWeight: 500, color: "#111827" }}>👁️ Pratinjau Cetak</div>
             <iframe title="Pratinjau Cetak Jadwal" srcDoc={jadwalHTML} style={{ width: "100%", height: "720px", border: "none", display: "block" }} />
+          </div>
+
+          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "20px", textAlign: "center" }}>
+            <h3 style={{ fontSize: "13px", fontWeight: 500, color: "#111827", marginTop: 0, marginBottom: "4px" }}>🔄 Sinkron Offline ↔ Online</h3>
+            <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>Pindahkan data Jadwal antara aplikasi ini dan versi desktop offline lewat file — Import selalu menampilkan pratinjau perubahan dulu, tidak langsung diterapkan sampai dikonfirmasi.</p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "10px", flexWrap: "wrap" }}>
+              <button onClick={doExportJSON} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📤 Export Data Jadwal (.json)</button>
+              <button onClick={() => importFileRef.current?.click()} style={{ padding: "9px 20px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>📥 Import Data Jadwal (.json)</button>
+              <input ref={importFileRef} type="file" accept="application/json,.json" onChange={onPickImportFile} style={{ display: "none" }} />
+            </div>
+            {importError && <p style={{ fontSize: "12px", color: "#b91c1c", marginTop: "10px", marginBottom: 0 }}>⚠️ {importError}</p>}
+          </div>
+        </div>
+      )}
+
+      {importPreview && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+          <div style={{ background: "white", borderRadius: THEME.radius.lg, boxShadow: THEME.shadow.popover, maxWidth: "480px", width: "100%", maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e7eb" }}>
+              <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#111827", margin: 0 }}>Konfirmasi Import Data Jadwal</h3>
+              <p style={{ fontSize: "12px", color: "#9ca3af", margin: "4px 0 0" }}>Belum ada yang berubah — tinjau dulu, lalu klik "Terapkan" untuk menerapkan.</p>
+            </div>
+            <div style={{ padding: "16px 20px" }}>
+              {jadwalDiffIsEmpty(importPreview.diff) ? (
+                <p style={{ fontSize: "13px", color: "#6b7280" }}>Tidak ada perbedaan — file ini identik dengan data yang sedang ditampilkan.</p>
+              ) : (
+                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "12.5px", color: "#374151", lineHeight: 1.9 }}>
+                  {importPreview.diff.gridChanges > 0 && <li>{importPreview.diff.gridChanges} sel Jadwal Putra berubah</li>}
+                  {importPreview.diff.gridPutriChanges > 0 && <li>{importPreview.diff.gridPutriChanges} sel Jadwal Putri berubah</li>}
+                  {importPreview.diff.guruAdded.length > 0 && <li>Guru baru: {importPreview.diff.guruAdded.join(", ")}</li>}
+                  {importPreview.diff.guruRemoved.length > 0 && <li>Guru dihapus: {importPreview.diff.guruRemoved.join(", ")}</li>}
+                  {importPreview.diff.guruModified.length > 0 && <li>Guru diubah: {importPreview.diff.guruModified.join(", ")}</li>}
+                  {importPreview.diff.mapelAdded.length > 0 && <li>Mapel baru: {importPreview.diff.mapelAdded.join(", ")}</li>}
+                  {importPreview.diff.mapelRemoved.length > 0 && <li>Mapel dihapus: {importPreview.diff.mapelRemoved.join(", ")}</li>}
+                  {importPreview.diff.ketentuanChanged && <li>Ketentuan Guru berubah</li>}
+                  {importPreview.diff.piketPutraChanged && <li>Guru Piket Putra berubah</li>}
+                  {importPreview.diff.piketPutriChanged && <li>Guru Piket Putri berubah</li>}
+                  {importPreview.diff.kelasLabelChanged && <li>Label nama kelas berubah</li>}
+                </ul>
+              )}
+            </div>
+            <div style={{ padding: "12px 20px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+              <button onClick={() => setImportPreview(null)} style={{ padding: "8px 16px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>Batal</button>
+              <GreenBtn onClick={applyImport}>✓ Terapkan</GreenBtn>
+            </div>
           </div>
         </div>
       )}
