@@ -14,3 +14,7 @@ android/.gradle/
 android/app/google-services.json
 android/local.properties
 resources/
+
+# JVM crash dumps left behind by crashed Gradle/Java processes
+hs_err_pid*.log
+replay_pid*.log
