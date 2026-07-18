@@ -5088,6 +5088,19 @@ function nowMinutesOfDay() {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes();
 }
+// Menit terlambat dari jam kedatangan: keterlambatan dihitung mulai 10 menit setelah
+// jam masuk (Jam I 05.30 → dihitung mulai 05.40, Jam II 06.30 → mulai 06.40); datang
+// pada/sebelum batas itu = 0 menit (tepat waktu). `datang` is the <input type="time">
+// value ("HH:MM").
+const KEHADIRAN_TELAT_GRACE_MIN = 10;
+function hitungTelatDariDatang(jamWaktu, datang) {
+  const startMin = jamStartMinutes(jamWaktu);
+  const m = /^(\d{1,2})[:.](\d{2})$/.exec(datang || "");
+  if (startMin == null || !m) return undefined;
+  const arriveMin = Number(m[1]) * 60 + Number(m[2]);
+  const telat = arriveMin - (startMin + KEHADIRAN_TELAT_GRACE_MIN);
+  return telat > 0 ? telat : 0;
+}
 // In-app notification log (Guru↔TU izin/peringatan) — the realtime-synced fallback that
 // works regardless of push permission/delivery. Flat array, newest last, trimmed on every
 // write since (unlike kehadiranGuru) it has no natural per-date key to bound its size.
@@ -5261,17 +5274,24 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
                             style={{ width: "100%", padding: "4px 7px", border: "1px solid #d1d5db", borderRadius: "5px", fontSize: "11px", boxSizing: "border-box" }} />
                         )}
                         {status === "H" && (
-                          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                            <input type="number" min="0" disabled={locked} placeholder="0" value={rec?.telat ?? ""}
-                              onChange={(e) => onPatchRecord(r.layer, r.jam.kode, r.kelas.kode, { telat: e.target.value ? Number(e.target.value) : undefined })}
-                              style={{ width: "56px", padding: "4px 7px", border: "1px solid #d1d5db", borderRadius: "5px", fontSize: "11px" }} />
-                            <span style={{ fontSize: "10px", color: "#9ca3af" }}>menit terlambat</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                            <input type="time" disabled={locked} value={rec?.datang || ""}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                onPatchRecord(r.layer, r.jam.kode, r.kelas.kode, { datang: v || undefined, telat: v ? hitungTelatDariDatang(r.jam.waktu, v) : undefined });
+                              }}
+                              style={{ padding: "4px 7px", border: "1px solid #d1d5db", borderRadius: "5px", fontSize: "11px" }} />
+                            <span style={{ fontSize: "10px", color: rec?.telat ? "#b45309" : "#9ca3af", fontWeight: rec?.telat ? 600 : 400 }}>
+                              {rec?.datang ? (rec?.telat ? `Terlambat ${rec.telat} menit` : "Tepat waktu") : "jam kedatangan"}
+                            </span>
                           </div>
                         )}
                       </>
                     ) : (
                       <span style={{ color: "#6b7280" }}>
-                        {status === "I" && rec?.keterangan ? rec.keterangan : status === "H" && rec?.telat ? `Terlambat ${rec.telat} menit` : "-"}
+                        {status === "I" && rec?.keterangan ? rec.keterangan
+                          : status === "H" && rec?.datang ? `Datang ${rec.datang.replace(":", ".")}${rec.telat ? ` — Terlambat ${rec.telat} menit` : " (tepat waktu)"}`
+                          : status === "H" && rec?.telat ? `Terlambat ${rec.telat} menit` : "-"}
                       </span>
                     )}
                   </td>
@@ -5340,7 +5360,7 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, AC
   const setStatus = (rLayer, jamKode, kelasKode, guruKode, status) => {
     const existing = kehadiranGuru?.[iso]?.[rLayer]?.[jamKode]?.[kelasKode] || null;
     if (existing?.status === status) { clearRecord(rLayer, jamKode, kelasKode); return; }
-    patchRecord(rLayer, jamKode, kelasKode, { g: guruKode, status, keterangan: undefined, telat: undefined });
+    patchRecord(rLayer, jamKode, kelasKode, { g: guruKode, status, keterangan: undefined, telat: undefined, datang: undefined });
   };
   // TU warns a guru who's ~10 menit past class start with no status recorded yet — writes
   // `peringatanAt` onto the (still-empty) record via patchRecord's existing spread-merge
@@ -5374,7 +5394,7 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, AC
               ⏳ Akun Anda belum dikonfirmasi Admin untuk semester ini — kehadiran bisa dilihat tapi belum bisa diisi/diubah.
             </div>
           )}
-          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0, marginBottom: "12px" }}>⏱️ Keterlambatan dihitung mulai dari 10 menit setelah jam masuk — di bawah itu tetap dicatat Hadir tanpa keterangan terlambat.</p>
+          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0, marginBottom: "12px" }}>⏱️ Isi <strong>jam kedatangan</strong> pada guru yang Hadir — menit keterlambatan dihitung otomatis. Jam I dihitung mulai 05.40, Jam II mulai 06.40; datang sebelum batas itu tercatat tepat waktu.</p>
           {!hari ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
               Hari ini Jumat — tidak ada jadwal pelajaran, tidak perlu mengisi kehadiran guru.
