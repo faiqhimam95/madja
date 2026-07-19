@@ -5431,6 +5431,33 @@ function aggregateKehadiran(kehadiranGuru, start, end, layerFilter = null) {
   });
   return counts;
 }
+// Per-record detail list backing the click-to-expand "Tanpa Keterangan"/"Total
+// terlambat" rows in a guru's own scoped Rekap Saya card (KehadiranRecapPanel with
+// scopeGuruKode set) — same date range already picked via Per Hari/Minggu/Bulan.
+// `kind` is "A" (every Tanpa Keterangan record) or "telat" (every Hadir record with
+// telat > 0); aggregateKehadiran only returns the summed counts, not which dates they
+// came from, so this walks kehadiranGuru itself the same way aggregateKehadiran does.
+function buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, guruKode, kind) {
+  const putraKelas = jadwalPutraKelas(JADWAL);
+  const putriKelas = jadwalPutriKelas(CL || {}, JADWAL);
+  const kelasLabelOf = (layer, kode) => (layer === "putra" ? putraKelas : putriKelas).find((k) => k.kode === kode)?.label || kode;
+  const rows = [];
+  Object.entries(kehadiranGuru || {}).forEach(([dateISO, day]) => {
+    if (dateISO < start || dateISO > end) return;
+    ["putra", "putri"].forEach((layer) => {
+      Object.entries(day?.[layer] || {}).forEach(([jamKode, jamData]) => {
+        Object.entries(jamData || {}).forEach(([kelasKode, rec]) => {
+          if (!rec?.g || rec.g !== guruKode) return;
+          if (kind === "A" && rec.status !== "A") return;
+          if (kind === "telat" && !(rec.status === "H" && rec.telat > 0)) return;
+          const jam = JADWAL_JAM.find((j) => j.kode === jamKode);
+          rows.push({ date: dateISO, jamKode, jamWaktu: jam?.waktu || "", kelasLabel: kelasLabelOf(layer, kelasKode), telat: rec.telat || 0 });
+        });
+      });
+    });
+  });
+  return rows.sort((a, b) => a.date.localeCompare(b.date) || a.jamKode.localeCompare(b.jamKode));
+}
 // Whole-semester recap regardless of date (kehadiranGuru itself already only ever
 // holds the current semester's data — see the reset-cycle note in AdminDashboard).
 function buildKehadiranRecap(kehadiranGuru) {
@@ -5512,6 +5539,10 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
   const [mode, setMode] = useState("minggu");
   const [selDate, setSelDate] = useState(todayISO());
   const [selMonth, setSelMonth] = useState(todayISO().slice(0, 7));
+  // Click-to-expand detail for the single-guru scoped card ("Rekap Saya") — which
+  // dates/jam a "Tanpa Keterangan" or a late arrival actually happened on, since the
+  // H/S/I/A bar and "Total terlambat" box only ever show a summed count.
+  const [detailKind, setDetailKind] = useState(null); // null | "A" | "telat"
   const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
   const mapelByKode = useMemo(() => Object.fromEntries((JADWAL.mapel || []).map((m) => [m.kode, m])), [JADWAL.mapel]);
 
@@ -5533,6 +5564,10 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
     .sort((a, b) => (b.c.H + b.c.S + b.c.I + b.c.A) - (a.c.H + a.c.S + a.c.I + a.c.A));
   const totalRecords = rows.reduce((s, r) => s + r.c.H + r.c.S + r.c.I + r.c.A, 0);
   const dayView = mode === "hari" ? buildKehadiranDayRows(JADWAL, CL, selDate, kehadiranGuru, scopeLayer, scopeGuruKode) : null;
+  const detailRows = useMemo(
+    () => (scopeGuruKode && detailKind ? buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, scopeGuruKode, detailKind) : []),
+    [scopeGuruKode, detailKind, kehadiranGuru, JADWAL, CL, start, end]
+  );
 
   return (
     <div>
@@ -5580,18 +5615,57 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
                 const n = rows[0].c[s.kode] || 0;
                 const total = rows[0].c.H + rows[0].c.S + rows[0].c.I + rows[0].c.A;
                 const pct = total > 0 ? Math.round((n / total) * 100) : 0;
+                const clickable = s.kode === "A" && n > 0;
                 return (
-                  <div key={s.kode} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f3f4f6", fontSize: "12.5px" }}>
+                  <div key={s.kode} onClick={clickable ? () => setDetailKind((k) => (k === "A" ? null : "A")) : undefined}
+                    style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f3f4f6", fontSize: "12.5px", cursor: clickable ? "pointer" : "default" }}>
                     <span style={{ display: "flex", alignItems: "center", gap: "8px", color: "#52584f" }}>
                       <span style={{ width: "10px", height: "10px", borderRadius: "3px", background: KEHADIRAN_CHART_HUE[s.kode] }} />
                       {s.label}
+                      {clickable && <span style={{ fontSize: "9px", color: "#9ca3af" }}>{detailKind === "A" ? "▲ sembunyikan" : "▼ lihat detail"}</span>}
                     </span>
                     <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{n} ({pct}%)</span>
                   </div>
                 );
               })}
             </div>
-            {rows[0].c.telat > 0 && <div style={{ marginTop: "12px", padding: "10px 12px", background: THEME.green[50], borderRadius: THEME.radius.sm, fontSize: "12px", color: "#92400e" }}>⏱️ Total terlambat: <strong>{rows[0].c.telat} menit</strong></div>}
+            {rows[0].c.telat > 0 && (
+              <div onClick={() => setDetailKind((k) => (k === "telat" ? null : "telat"))} style={{ marginTop: "12px", padding: "10px 12px", background: THEME.green[50], borderRadius: THEME.radius.sm, fontSize: "12px", color: "#92400e", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                <span>⏱️ Total terlambat: <strong>{rows[0].c.telat} menit</strong></span>
+                <span style={{ fontSize: "9px", color: "#b45309" }}>{detailKind === "telat" ? "▲ sembunyikan" : "▼ lihat detail"}</span>
+              </div>
+            )}
+            {detailKind && (
+              <div style={{ marginTop: "10px", border: "1px solid #e5e7eb", borderRadius: THEME.radius.sm, overflow: "hidden" }}>
+                <div style={{ padding: "8px 12px", background: "#f9fafb", fontSize: "11px", fontWeight: 500, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>
+                  📋 Detail {detailKind === "A" ? "Tanpa Keterangan" : "Keterlambatan"}
+                </div>
+                {detailRows.length === 0 ? (
+                  <p style={{ padding: "12px", fontSize: "12px", color: "#9ca3af", margin: 0 }}>Tidak ada data pada periode ini.</p>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                    <thead>
+                      <tr style={{ background: "#f9fafb" }}>
+                        <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Tanggal</th>
+                        <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Jam</th>
+                        <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Kelas</th>
+                        {detailKind === "telat" && <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Menit</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailRows.map((r, i) => (
+                        <tr key={i} style={{ borderTop: "1px solid #f3f4f6" }}>
+                          <td style={{ padding: "6px 12px" }}>{formatTanggalIndo(r.date)}</td>
+                          <td style={{ padding: "6px 12px", color: "#9ca3af" }}>{r.jamKode} ({r.jamWaktu})</td>
+                          <td style={{ padding: "6px 12px" }}>{r.kelasLabel}</td>
+                          {detailKind === "telat" && <td style={{ padding: "6px 12px", color: "#92400e", fontWeight: 600 }}>{r.telat} menit</td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ) : (
