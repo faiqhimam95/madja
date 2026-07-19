@@ -5543,6 +5543,10 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
   // dates/jam a "Tanpa Keterangan" or a late arrival actually happened on, since the
   // H/S/I/A bar and "Total terlambat" box only ever show a summed count.
   const [detailKind, setDetailKind] = useState(null); // null | "A" | "telat"
+  // Same idea for the unscoped multi-guru table (Admin Dashboard, Super Admin's "Rekap
+  // Kehadiran" tab, and the public pre-login landing — all three share this one render
+  // branch) — which guru's row is expanded, and which of their two clickable stats.
+  const [expandedRow, setExpandedRow] = useState(null); // null | { kode, kind: "A"|"telat" }
   const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
   const mapelByKode = useMemo(() => Object.fromEntries((JADWAL.mapel || []).map((m) => [m.kode, m])), [JADWAL.mapel]);
 
@@ -5567,6 +5571,10 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
   const detailRows = useMemo(
     () => (scopeGuruKode && detailKind ? buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, scopeGuruKode, detailKind) : []),
     [scopeGuruKode, detailKind, kehadiranGuru, JADWAL, CL, start, end]
+  );
+  const expandedRowDetail = useMemo(
+    () => (expandedRow ? buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, expandedRow.kode, expandedRow.kind) : []),
+    [expandedRow, kehadiranGuru, JADWAL, CL, start, end]
   );
 
   return (
@@ -5675,7 +5683,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
-                {["Guru", "Kehadiran", "Menit Terlambat"].map((h) => (
+                {["Guru", "Kehadiran", "Tanpa Keterangan", "Menit Terlambat"].map((h) => (
                   <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
                 ))}
               </tr>
@@ -5684,17 +5692,65 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
               {rows.map((r) => {
                 const total = r.c.H + r.c.S + r.c.I + r.c.A;
                 const pctH = total > 0 ? Math.round((r.c.H / total) * 100) : 0;
+                const isExpanded = (kind) => expandedRow?.kode === r.kode && expandedRow?.kind === kind;
+                const toggle = (kind) => setExpandedRow((cur) => (cur?.kode === r.kode && cur?.kind === kind ? null : { kode: r.kode, kind }));
                 return (
-                  <tr key={r.kode} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                    <td style={{ padding: "10px 12px", fontWeight: 500, whiteSpace: "nowrap", verticalAlign: "middle" }}>{r.nama}</td>
-                    <td style={{ padding: "10px 12px", minWidth: "180px", verticalAlign: "middle" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <div style={{ flex: 1, minWidth: "80px" }}><KehadiranBarChart counts={r.c} /></div>
-                        <span style={{ fontSize: "11.5px", color: "#52584f", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><strong style={{ color: "#065f46" }}>{pctH}%</strong> · {total} tercatat</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: "10px 12px", verticalAlign: "middle", color: r.c.telat > 0 ? "#92400e" : "#d1d5db", whiteSpace: "nowrap" }}>{r.c.telat > 0 ? `${r.c.telat} menit` : "-"}</td>
-                  </tr>
+                  <React.Fragment key={r.kode}>
+                    <tr style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: "10px 12px", fontWeight: 500, whiteSpace: "nowrap", verticalAlign: "middle" }}>{r.nama}</td>
+                      <td style={{ padding: "10px 12px", minWidth: "180px", verticalAlign: "middle" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <div style={{ flex: 1, minWidth: "80px" }}><KehadiranBarChart counts={r.c} /></div>
+                          <span style={{ fontSize: "11.5px", color: "#52584f", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><strong style={{ color: "#065f46" }}>{pctH}%</strong> · {total} tercatat</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: "10px 12px", verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                        {r.c.A > 0 ? (
+                          <span onClick={() => toggle("A")} style={{ cursor: "pointer", color: "#991b1b", fontWeight: 500 }}>{r.c.A} · {isExpanded("A") ? "▲ sembunyikan" : "▼ lihat detail"}</span>
+                        ) : "-"}
+                      </td>
+                      <td style={{ padding: "10px 12px", verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                        {r.c.telat > 0 ? (
+                          <span onClick={() => toggle("telat")} style={{ cursor: "pointer", color: "#92400e", fontWeight: 500 }}>{r.c.telat} menit · {isExpanded("telat") ? "▲ sembunyikan" : "▼ lihat detail"}</span>
+                        ) : <span style={{ color: "#d1d5db" }}>-</span>}
+                      </td>
+                    </tr>
+                    {expandedRow?.kode === r.kode && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: "0 12px 12px" }}>
+                          <div style={{ border: "1px solid #e5e7eb", borderRadius: THEME.radius.sm, overflow: "hidden" }}>
+                            <div style={{ padding: "8px 12px", background: "#f9fafb", fontSize: "11px", fontWeight: 500, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>
+                              📋 Detail {expandedRow.kind === "A" ? "Tanpa Keterangan" : "Keterlambatan"} — {r.nama}
+                            </div>
+                            {expandedRowDetail.length === 0 ? (
+                              <p style={{ padding: "12px", fontSize: "12px", color: "#9ca3af", margin: 0 }}>Tidak ada data pada periode ini.</p>
+                            ) : (
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                                <thead>
+                                  <tr style={{ background: "#f9fafb" }}>
+                                    <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Tanggal</th>
+                                    <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Jam</th>
+                                    <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Kelas</th>
+                                    {expandedRow.kind === "telat" && <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Menit</th>}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {expandedRowDetail.map((dr, i) => (
+                                    <tr key={i} style={{ borderTop: "1px solid #f3f4f6" }}>
+                                      <td style={{ padding: "6px 12px" }}>{formatTanggalIndo(dr.date)}</td>
+                                      <td style={{ padding: "6px 12px", color: "#9ca3af" }}>{dr.jamKode} ({dr.jamWaktu})</td>
+                                      <td style={{ padding: "6px 12px" }}>{dr.kelasLabel}</td>
+                                      {expandedRow.kind === "telat" && <td style={{ padding: "6px 12px", color: "#92400e", fontWeight: 600 }}>{dr.telat} menit</td>}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
