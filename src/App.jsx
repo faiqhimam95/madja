@@ -5913,17 +5913,56 @@ function useRemoteState(key, defaultValue) {
       return () => {};
     }
 
+    const cacheAndSet = (v) => {
+      setValue(v);
+      try { localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(v)); } catch { /* ignore quota errors */ }
+    };
+    const fallbackToCache = () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_PREFIX + key);
+        if (raw !== null) setValue(JSON.parse(raw));
+      } catch { /* ignore malformed/missing local data, keep defaultValue */ }
+    };
+
     (async () => {
-      const { data, error } = await supabase.from("app_state").select("value").eq("key", key).maybeSingle();
+      // supabase-js retries a genuinely-unreachable request internally for several
+      // seconds before its promise ever settles (measured ~7s) — too slow to feel like
+      // "still works offline". Race it against a much shorter timeout instead: if the
+      // timeout wins, fall back to whatever was cached here on a previous successful
+      // load/edit and let the app render right away, but keep the real fetch running in
+      // the background so it can self-heal into fresh data the moment connectivity
+      // actually returns, without needing a manual reload.
+      // Promise.resolve(...) wraps supabase-js's query builder — a thenable with only a
+      // custom .then(), not a real Promise instance — so .catch() below actually exists.
+      const fetchPromise = Promise.resolve(supabase.from("app_state").select("value").eq("key", key).maybeSingle());
+      const timedOut = Symbol("timeout");
+      const raced = await Promise.race([
+        fetchPromise.catch((err) => ({ error: err })),
+        new Promise((resolve) => setTimeout(() => resolve(timedOut), 4000)),
+      ]);
       if (cancelled) return;
-      if (error) {
-        console.error(`Gagal memuat "${key}" dari Supabase:`, error.message);
-      } else if (data) {
-        setValue(data.value);
+
+      if (raced === timedOut) {
+        fallbackToCache();
+        setReady(true);
+        fetchPromise
+          .then(({ data, error }) => {
+            if (cancelled || error || !data) return;
+            cacheAndSet(data.value); // arrives late (connectivity just returned) — still worth applying
+          })
+          .catch(() => {});
       } else {
-        await supabase.from("app_state").upsert({ key, value: defaultValue });
+        const { data, error } = raced;
+        if (error) {
+          console.error(`Gagal memuat "${key}" dari Supabase:`, error.message || error);
+          fallbackToCache();
+        } else if (data) {
+          cacheAndSet(data.value);
+        } else {
+          await supabase.from("app_state").upsert({ key, value: defaultValue });
+        }
+        setReady(true);
       }
-      setReady(true);
 
       channel = supabase
         .channel(`app_state_${key}`)
@@ -5932,7 +5971,7 @@ function useRemoteState(key, defaultValue) {
           const incomingMs = payload.new.updated_at ? new Date(payload.new.updated_at).getTime() : NaN;
           const lastMs = new Date(lastWriteAtRef.current).getTime();
           if (incomingMs <= lastMs) return; // stale echo of our own (or an older) write — comparisons with NaN are false, so missing/invalid timestamps just fall through
-          setValue(payload.new.value);
+          cacheAndSet(payload.new.value);
         })
         .subscribe();
     })();
@@ -5947,16 +5986,19 @@ function useRemoteState(key, defaultValue) {
     (updater) => {
       setValue((prev) => {
         const next = typeof updater === "function" ? updater(prev) : updater;
+        // Always mirror to localStorage, Supabase-backed or not — this is what a fetch
+        // failure above falls back to, so an admin's own most recent edit survives even
+        // if the app gets killed and reopened before the write round-trips (or never
+        // does, offline).
+        try {
+          localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(next));
+        } catch {
+          // ignore quota errors
+        }
         if (supabase) {
           const ts = new Date().toISOString();
           lastWriteAtRef.current = ts;
           writeChainRef.current = writeChainRef.current.then(() => writeWithRetry(key, next, ts));
-        } else {
-          try {
-            localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(next));
-          } catch {
-            // ignore quota errors
-          }
         }
         return next;
       });
