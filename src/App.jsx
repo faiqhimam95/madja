@@ -5449,9 +5449,10 @@ function buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, guruKod
         Object.entries(jamData || {}).forEach(([kelasKode, rec]) => {
           if (!rec?.g || rec.g !== guruKode) return;
           if (kind === "A" && rec.status !== "A") return;
+          if (kind === "I" && rec.status !== "I") return;
           if (kind === "telat" && !(rec.status === "H" && rec.telat > 0)) return;
           const jam = JADWAL_JAM.find((j) => j.kode === jamKode);
-          rows.push({ date: dateISO, jamKode, jamWaktu: jam?.waktu || "", kelasLabel: kelasLabelOf(layer, kelasKode), telat: rec.telat || 0 });
+          rows.push({ date: dateISO, jamKode, jamWaktu: jam?.waktu || "", kelasLabel: kelasLabelOf(layer, kelasKode), telat: rec.telat || 0, keterangan: rec.keterangan || "" });
         });
       });
     });
@@ -5623,14 +5624,14 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
                 const n = rows[0].c[s.kode] || 0;
                 const total = rows[0].c.H + rows[0].c.S + rows[0].c.I + rows[0].c.A;
                 const pct = total > 0 ? Math.round((n / total) * 100) : 0;
-                const clickable = s.kode === "A" && n > 0;
+                const clickable = (s.kode === "A" || s.kode === "I") && n > 0;
                 return (
-                  <div key={s.kode} onClick={clickable ? () => setDetailKind((k) => (k === "A" ? null : "A")) : undefined}
+                  <div key={s.kode} onClick={clickable ? () => setDetailKind((k) => (k === s.kode ? null : s.kode)) : undefined}
                     style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f3f4f6", fontSize: "12.5px", cursor: clickable ? "pointer" : "default" }}>
                     <span style={{ display: "flex", alignItems: "center", gap: "8px", color: "#52584f" }}>
                       <span style={{ width: "10px", height: "10px", borderRadius: "3px", background: KEHADIRAN_CHART_HUE[s.kode] }} />
                       {s.label}
-                      {clickable && <span style={{ fontSize: "9px", color: "#9ca3af" }}>{detailKind === "A" ? "▲ sembunyikan" : "▼ lihat detail"}</span>}
+                      {clickable && <span style={{ fontSize: "9px", color: "#9ca3af" }}>{detailKind === s.kode ? "▲" : "▼"}</span>}
                     </span>
                     <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{n} ({pct}%)</span>
                   </div>
@@ -5640,13 +5641,13 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
             {rows[0].c.telat > 0 && (
               <div onClick={() => setDetailKind((k) => (k === "telat" ? null : "telat"))} style={{ marginTop: "12px", padding: "10px 12px", background: THEME.green[50], borderRadius: THEME.radius.sm, fontSize: "12px", color: "#92400e", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
                 <span>⏱️ Total terlambat: <strong>{rows[0].c.telat} menit</strong></span>
-                <span style={{ fontSize: "9px", color: "#b45309" }}>{detailKind === "telat" ? "▲ sembunyikan" : "▼ lihat detail"}</span>
+                <span style={{ fontSize: "9px", color: "#b45309" }}>{detailKind === "telat" ? "▲" : "▼"}</span>
               </div>
             )}
             {detailKind && (
               <div style={{ marginTop: "10px", border: "1px solid #e5e7eb", borderRadius: THEME.radius.sm, overflow: "hidden" }}>
                 <div style={{ padding: "8px 12px", background: "#f9fafb", fontSize: "11px", fontWeight: 500, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>
-                  📋 Detail {detailKind === "A" ? "Tanpa Keterangan" : "Keterlambatan"}
+                  📋 Detail {detailKind === "A" ? "Tanpa Keterangan" : detailKind === "I" ? "Izin" : "Keterlambatan"}
                 </div>
                 {detailRows.length === 0 ? (
                   <p style={{ padding: "12px", fontSize: "12px", color: "#9ca3af", margin: 0 }}>Tidak ada data pada periode ini.</p>
@@ -5658,6 +5659,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
                         <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Jam</th>
                         <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Kelas</th>
                         {detailKind === "telat" && <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Menit</th>}
+                        {detailKind === "I" && <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Keterangan</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -5667,6 +5669,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
                           <td style={{ padding: "6px 12px", color: "#9ca3af" }}>{r.jamKode} ({r.jamWaktu})</td>
                           <td style={{ padding: "6px 12px" }}>{r.kelasLabel}</td>
                           {detailKind === "telat" && <td style={{ padding: "6px 12px", color: "#92400e", fontWeight: 600 }}>{r.telat} menit</td>}
+                          {detailKind === "I" && <td style={{ padding: "6px 12px", color: r.keterangan ? "#374151" : "#d1d5db" }}>{r.keterangan || "-"}</td>}
                         </tr>
                       ))}
                     </tbody>
@@ -5683,7 +5686,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
-                {["Guru", "Kehadiran", "Tanpa Keterangan", "Menit Terlambat"].map((h) => (
+                {["Guru", "Kehadiran", "Izin", "Tanpa Keterangan", "Menit Terlambat"].map((h) => (
                   <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
                 ))}
               </tr>
@@ -5705,22 +5708,27 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
                         </div>
                       </td>
                       <td style={{ padding: "10px 12px", verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                        {r.c.I > 0 ? (
+                          <span onClick={() => toggle("I")} style={{ cursor: "pointer", color: "#1e40af", fontWeight: 500 }}>{r.c.I} <span style={{ fontSize: "9px" }}>{isExpanded("I") ? "▲" : "▼"}</span></span>
+                        ) : "-"}
+                      </td>
+                      <td style={{ padding: "10px 12px", verticalAlign: "middle", whiteSpace: "nowrap" }}>
                         {r.c.A > 0 ? (
-                          <span onClick={() => toggle("A")} style={{ cursor: "pointer", color: "#991b1b", fontWeight: 500 }}>{r.c.A} · {isExpanded("A") ? "▲ sembunyikan" : "▼ lihat detail"}</span>
+                          <span onClick={() => toggle("A")} style={{ cursor: "pointer", color: "#991b1b", fontWeight: 500 }}>{r.c.A} <span style={{ fontSize: "9px" }}>{isExpanded("A") ? "▲" : "▼"}</span></span>
                         ) : "-"}
                       </td>
                       <td style={{ padding: "10px 12px", verticalAlign: "middle", whiteSpace: "nowrap" }}>
                         {r.c.telat > 0 ? (
-                          <span onClick={() => toggle("telat")} style={{ cursor: "pointer", color: "#92400e", fontWeight: 500 }}>{r.c.telat} menit · {isExpanded("telat") ? "▲ sembunyikan" : "▼ lihat detail"}</span>
+                          <span onClick={() => toggle("telat")} style={{ cursor: "pointer", color: "#92400e", fontWeight: 500 }}>{r.c.telat} menit <span style={{ fontSize: "9px" }}>{isExpanded("telat") ? "▲" : "▼"}</span></span>
                         ) : <span style={{ color: "#d1d5db" }}>-</span>}
                       </td>
                     </tr>
                     {expandedRow?.kode === r.kode && (
                       <tr>
-                        <td colSpan={4} style={{ padding: "0 12px 12px" }}>
+                        <td colSpan={5} style={{ padding: "0 12px 12px" }}>
                           <div style={{ border: "1px solid #e5e7eb", borderRadius: THEME.radius.sm, overflow: "hidden" }}>
                             <div style={{ padding: "8px 12px", background: "#f9fafb", fontSize: "11px", fontWeight: 500, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>
-                              📋 Detail {expandedRow.kind === "A" ? "Tanpa Keterangan" : "Keterlambatan"} — {r.nama}
+                              📋 Detail {expandedRow.kind === "A" ? "Tanpa Keterangan" : expandedRow.kind === "I" ? "Izin" : "Keterlambatan"} — {r.nama}
                             </div>
                             {expandedRowDetail.length === 0 ? (
                               <p style={{ padding: "12px", fontSize: "12px", color: "#9ca3af", margin: 0 }}>Tidak ada data pada periode ini.</p>
@@ -5732,6 +5740,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
                                     <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Jam</th>
                                     <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Kelas</th>
                                     {expandedRow.kind === "telat" && <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Menit</th>}
+                                    {expandedRow.kind === "I" && <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280" }}>Keterangan</th>}
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -5741,6 +5750,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
                                       <td style={{ padding: "6px 12px", color: "#9ca3af" }}>{dr.jamKode} ({dr.jamWaktu})</td>
                                       <td style={{ padding: "6px 12px" }}>{dr.kelasLabel}</td>
                                       {expandedRow.kind === "telat" && <td style={{ padding: "6px 12px", color: "#92400e", fontWeight: 600 }}>{dr.telat} menit</td>}
+                                      {expandedRow.kind === "I" && <td style={{ padding: "6px 12px", color: dr.keterangan ? "#374151" : "#d1d5db" }}>{dr.keterangan || "-"}</td>}
                                     </tr>
                                   ))}
                                 </tbody>
