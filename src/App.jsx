@@ -4771,6 +4771,15 @@ function guruPiketFor(JADWAL, layer, hari, jamKode) {
   const piket = layer === "putri" ? JADWAL.piketPutri : JADWAL.piketPutra;
   return piket?.[hari]?.[jamKode] || "-";
 }
+// Full kelas name (CL's own "name", e.g. "Awwaliyah I A") for the WhatsApp izin
+// template — Jadwal Putra's own kelasKode (awia, wsipa, ...) isn't a CL key, so it needs
+// JADWAL_PUTRA_CLKEY's kode→CL-key mapping first; Putri kelasKode already *is* the CL key
+// (jadwalPutriKelas is built straight from CL). Falls back to the short jadwal label if
+// CL somehow doesn't have that class (deleted after the jadwal cell was set, etc.).
+function kelasFullNameFor(CL, layer, kelasKode, fallbackLabel) {
+  const clKey = layer === "putra" ? JADWAL_PUTRA_CLKEY[kelasKode] : kelasKode;
+  return CL?.[clKey]?.name || fallbackLabel;
+}
 // The Madrasah's official izin template (fixed wording/spacing, explicit request) — Nama/
 // Mapel/Kelas/Jam/Hari-Tgl/Guru piket filled automatically from the flagged jadwal slot,
 // Keperluan/Tugas typed by the guru in the "Ajukan Izin" form.
@@ -4798,7 +4807,7 @@ function waShareLink(text) {
 // Kemarin, or an "Ajukan Izin" button (+ inline Keperluan/Tugas form) for Hari Ini/Besok
 // on any slot that isn't already marked Izin. Kept self-contained (owns its own
 // open/closed form state) so the parent panel doesn't need one entry of state per slot.
-function StatusKehadiranRow({ row, iso, hari, editable, onAjukanIzin, mapelByKode, guruNama, JADWAL, locked }) {
+function StatusKehadiranRow({ row, iso, hari, editable, onAjukanIzin, mapelByKode, guruNama, JADWAL, CL, locked }) {
   const [open, setOpen] = useState(false);
   const [keperluan, setKeperluan] = useState("");
   const [tugas, setTugas] = useState("");
@@ -4814,7 +4823,7 @@ function StatusKehadiranRow({ row, iso, hari, editable, onAjukanIzin, mapelByKod
     const pesan = buildIzinWhatsAppMessage({
       nama: guruNama,
       mapel: mapelByKode?.[row.cell?.m]?.nama || row.cell?.m || "-",
-      kelas: row.kelas.label,
+      kelas: kelasFullNameFor(CL, row.layer, row.kelas.kode, row.kelas.label),
       jamText: `${row.jam.kode} (${row.jam.waktu})`,
       hariTglText: `${HARI_LABEL_ID[hari] || hari}, ${formatTanggalIndo(iso)}`,
       keperluan, tugas,
@@ -4861,7 +4870,7 @@ function StatusKehadiranRow({ row, iso, hari, editable, onAjukanIzin, mapelByKod
 // Ini/Besok (Kemarin is already history, read-only). Each of the 3 day-views is a
 // `buildKehadiranDayRows(...)` result filtered to this guru's own kode — same shared
 // row-building function TU's fill screen and the recap panels already use.
-function GuruStatusKehadiranPanel({ days, onAjukanIzin, mapelByKode, guruNama, JADWAL, locked }) {
+function GuruStatusKehadiranPanel({ days, onAjukanIzin, mapelByKode, guruNama, JADWAL, CL, locked }) {
   const cards = [
     { key: "kemarin", label: "Kemarin", editable: false },
     { key: "hariIni", label: "Hari Ini", editable: true },
@@ -4883,7 +4892,7 @@ function GuruStatusKehadiranPanel({ days, onAjukanIzin, mapelByKode, guruNama, J
             ) : (
               d.rows.map((row, i) => (
                 <StatusKehadiranRow key={i} row={row} iso={d.iso} hari={d.hari} editable={c.editable} locked={locked}
-                  mapelByKode={mapelByKode} guruNama={guruNama} JADWAL={JADWAL}
+                  mapelByKode={mapelByKode} guruNama={guruNama} JADWAL={JADWAL} CL={CL}
                   onAjukanIzin={(r, keperluan, tugas) => onAjukanIzin(r, d.iso, keperluan, tugas)} />
               ))
             )}
@@ -5046,7 +5055,7 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKeha
       {tab === "pribadi" && (
         myGuru ? (
           <>
-            <GuruStatusKehadiranPanel days={statusDays} locked={locked} onAjukanIzin={submitIzin} mapelByKode={mapelByKode} guruNama={myGuru.nama} JADWAL={JADWAL} />
+            <GuruStatusKehadiranPanel days={statusDays} locked={locked} onAjukanIzin={submitIzin} mapelByKode={mapelByKode} guruNama={myGuru.nama} JADWAL={JADWAL} CL={CL} />
             <button onClick={() => setShowFullJadwal((s) => !s)} className="btn-hover" style={{ marginBottom: "10px", padding: "7px 14px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: THEME.radius.sm, fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>
               {showFullJadwal ? "▾ Sembunyikan Jadwal Lengkap" : "▸ Tampilkan Jadwal Lengkap"}
             </button>
