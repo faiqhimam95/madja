@@ -4764,19 +4764,64 @@ function JadwalPribadiTab({ myGuru, rows }) {
   );
 }
 
+// Guru piket (duty teacher) on duty for a given layer/hari/jam — free-text name, keyed
+// straight off JADWAL.piketPutra/piketPutri (see DEFAULT_JADWAL's own comment on that
+// shape), not tied to the guru kode list.
+function guruPiketFor(JADWAL, layer, hari, jamKode) {
+  const piket = layer === "putri" ? JADWAL.piketPutri : JADWAL.piketPutra;
+  return piket?.[hari]?.[jamKode] || "-";
+}
+// The Madrasah's official izin template (fixed wording/spacing, explicit request) — Nama/
+// Mapel/Kelas/Jam/Hari-Tgl/Guru piket filled automatically from the flagged jadwal slot,
+// Keperluan/Tugas typed by the guru in the "Ajukan Izin" form.
+function buildIzinWhatsAppMessage({ nama, mapel, kelas, jamText, hariTglText, keperluan, tugas, guruPiket }) {
+  return `Assalamu'alaikum Warahmatullahi  Wabarakatuh.
+Mohon izin tidak masuk 🙏
+
+Nama        : ${nama}
+Mapel        : ${mapel}
+Kelas         : ${kelas}
+Jam           : ${jamText}
+Hari/TGL   : ${hariTglText}
+Keperluan : ${keperluan || "-"}
+Tugas         : ${tugas || "-"}
+Guru piket : ${guruPiket}`;
+}
+// No group ID/number — wa.me with only a `text` param opens WhatsApp's own chat picker,
+// so the guru themselves picks "Grup WhatsApp Madrasah" to forward it to. WhatsApp has
+// no public way to target a specific consumer group directly from a link.
+function waShareLink(text) {
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}
+
 // One slot row inside a GuruStatusKehadiranPanel day card — read-only badge for
-// Kemarin, or an "Ajukan Izin" button (+ inline keterangan form) for Hari Ini/Besok on
-// any slot that isn't already marked Izin. Kept self-contained (owns its own open/closed
-// form state) so the parent panel doesn't need one entry of state per slot.
-function StatusKehadiranRow({ row, editable, onAjukanIzin, locked }) {
+// Kemarin, or an "Ajukan Izin" button (+ inline Keperluan/Tugas form) for Hari Ini/Besok
+// on any slot that isn't already marked Izin. Kept self-contained (owns its own
+// open/closed form state) so the parent panel doesn't need one entry of state per slot.
+function StatusKehadiranRow({ row, iso, hari, editable, onAjukanIzin, mapelByKode, guruNama, JADWAL, locked }) {
   const [open, setOpen] = useState(false);
-  const [ket, setKet] = useState("");
+  const [keperluan, setKeperluan] = useState("");
+  const [tugas, setTugas] = useState("");
   const status = row.rec?.status || "";
   const st = KEHADIRAN_STATUS.find((s) => s.kode === status);
+  const reset = () => { setOpen(false); setKeperluan(""); setTugas(""); };
   const submit = () => {
-    onAjukanIzin(row, ket);
-    setOpen(false);
-    setKet("");
+    onAjukanIzin(row, keperluan, tugas);
+    reset();
+  };
+  const kirimWhatsApp = () => {
+    onAjukanIzin(row, keperluan, tugas);
+    const pesan = buildIzinWhatsAppMessage({
+      nama: guruNama,
+      mapel: mapelByKode?.[row.cell?.m]?.nama || row.cell?.m || "-",
+      kelas: row.kelas.label,
+      jamText: `${row.jam.kode} (${row.jam.waktu})`,
+      hariTglText: `${HARI_LABEL_ID[hari] || hari}, ${formatTanggalIndo(iso)}`,
+      keperluan, tugas,
+      guruPiket: guruPiketFor(JADWAL, row.layer, hari, row.jam.kode),
+    });
+    window.open(waShareLink(pesan), "_blank");
+    reset();
   };
   return (
     <div style={{ padding: "8px 10px", borderBottom: "1px solid #f3f4f6" }}>
@@ -4795,11 +4840,16 @@ function StatusKehadiranRow({ row, editable, onAjukanIzin, locked }) {
         )}
       </div>
       {open && (
-        <div style={{ marginTop: "6px", display: "flex", gap: "6px" }}>
-          <input type="text" autoFocus value={ket} onChange={(e) => setKet(e.target.value)} placeholder="Keterangan izin (opsional)..."
-            style={{ flex: 1, padding: "5px 8px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px", boxSizing: "border-box" }} />
-          <GreenBtn onClick={submit} style={{ padding: "5px 10px", fontSize: "11px" }}>Kirim</GreenBtn>
-          <button onClick={() => setOpen(false)} style={{ padding: "5px 10px", background: "#f3f4f6", color: "#4b5563", border: "none", borderRadius: "6px", fontSize: "11px", cursor: "pointer" }}>Batal</button>
+        <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "6px" }}>
+          <input type="text" autoFocus value={keperluan} onChange={(e) => setKeperluan(e.target.value)} placeholder="Keperluan..."
+            style={{ padding: "5px 8px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px", boxSizing: "border-box" }} />
+          <input type="text" value={tugas} onChange={(e) => setTugas(e.target.value)} placeholder="Tugas untuk santri (opsional)..."
+            style={{ padding: "5px 8px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "11px", boxSizing: "border-box" }} />
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            <GreenBtn onClick={submit} style={{ padding: "5px 10px", fontSize: "11px" }}>Kirim</GreenBtn>
+            <button onClick={kirimWhatsApp} className="btn-hover" style={{ padding: "5px 10px", background: "#25D366", color: "white", border: "none", borderRadius: "6px", fontSize: "11px", fontWeight: 500, cursor: "pointer" }}>📱 Kirim ke WhatsApp Grup</button>
+            <button onClick={() => setOpen(false)} style={{ padding: "5px 10px", background: "#f3f4f6", color: "#4b5563", border: "none", borderRadius: "6px", fontSize: "11px", cursor: "pointer" }}>Batal</button>
+          </div>
         </div>
       )}
     </div>
@@ -4811,7 +4861,7 @@ function StatusKehadiranRow({ row, editable, onAjukanIzin, locked }) {
 // Ini/Besok (Kemarin is already history, read-only). Each of the 3 day-views is a
 // `buildKehadiranDayRows(...)` result filtered to this guru's own kode — same shared
 // row-building function TU's fill screen and the recap panels already use.
-function GuruStatusKehadiranPanel({ days, onAjukanIzin, locked }) {
+function GuruStatusKehadiranPanel({ days, onAjukanIzin, mapelByKode, guruNama, JADWAL, locked }) {
   const cards = [
     { key: "kemarin", label: "Kemarin", editable: false },
     { key: "hariIni", label: "Hari Ini", editable: true },
@@ -4832,7 +4882,9 @@ function GuruStatusKehadiranPanel({ days, onAjukanIzin, locked }) {
               <div style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: "11px" }}>Tidak ada jadwal mengajar.</div>
             ) : (
               d.rows.map((row, i) => (
-                <StatusKehadiranRow key={i} row={row} editable={c.editable} locked={locked} onAjukanIzin={(r, ket) => onAjukanIzin(r, d.iso, ket)} />
+                <StatusKehadiranRow key={i} row={row} iso={d.iso} hari={d.hari} editable={c.editable} locked={locked}
+                  mapelByKode={mapelByKode} guruNama={guruNama} JADWAL={JADWAL}
+                  onAjukanIzin={(r, keperluan, tugas) => onAjukanIzin(r, d.iso, keperluan, tugas)} />
               ))
             )}
           </div>
@@ -4970,16 +5022,16 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKeha
   // straight into kehadiranGuru with the same shape TU's own patchRecord uses, logs a
   // notifikasi entry so TU sees it even without push, then best-effort pushes to every
   // TU account on that slot's layer.
-  const submitIzin = (row, dateISO, keterangan) => {
+  const submitIzin = (row, dateISO, keperluan, tugas) => {
     if (locked || !myGuru) return;
     const { layer, jam, kelas } = row;
     setKehadiranGuru((prev) => {
       const day = prev[dateISO] || {};
       const layerData = day[layer] || {};
       const jamData = layerData[jam.kode] || {};
-      return { ...prev, [dateISO]: { ...day, [layer]: { ...layerData, [jam.kode]: { ...jamData, [kelas.kode]: { g: myGuru.kode, status: "I", keterangan, sumber: "guru" } } } } };
+      return { ...prev, [dateISO]: { ...day, [layer]: { ...layerData, [jam.kode]: { ...jamData, [kelas.kode]: { g: myGuru.kode, status: "I", keterangan: keperluan, tugas, sumber: "guru" } } } } };
     });
-    const pesan = `${myGuru.nama} mengajukan izin — ${kelas.label} Jam ${jam.kode} (${formatTanggalIndo(dateISO)})${keterangan ? `: ${keterangan}` : ""}`;
+    const pesan = `${myGuru.nama} mengajukan izin — ${kelas.label} Jam ${jam.kode} (${formatTanggalIndo(dateISO)})${keperluan ? `: ${keperluan}` : ""}`;
     setNotifikasi((prev) => trimNotifikasi([...prev, makeNotifikasi({ dari: user.username, untukLayer: layer, tipe: "izin", pesan, kelas: kelas.label, jam: jam.kode })]));
     const tuUsernames = (ACCS || []).filter((a) => a.role === "tu" && a.layer === layer).map((a) => a.u);
     sendPushBestEffort(deviceTokens, tuUsernames, { title: "📨 Izin Guru", body: pesan, data: { tipe: "izin" } }).catch(() => {});
@@ -4994,7 +5046,7 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKeha
       {tab === "pribadi" && (
         myGuru ? (
           <>
-            <GuruStatusKehadiranPanel days={statusDays} locked={locked} onAjukanIzin={submitIzin} />
+            <GuruStatusKehadiranPanel days={statusDays} locked={locked} onAjukanIzin={submitIzin} mapelByKode={mapelByKode} guruNama={myGuru.nama} JADWAL={JADWAL} />
             <button onClick={() => setShowFullJadwal((s) => !s)} className="btn-hover" style={{ marginBottom: "10px", padding: "7px 14px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: THEME.radius.sm, fontSize: "12px", fontWeight: 500, cursor: "pointer" }}>
               {showFullJadwal ? "▾ Sembunyikan Jadwal Lengkap" : "▸ Tampilkan Jadwal Lengkap"}
             </button>
