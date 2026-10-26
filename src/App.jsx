@@ -1162,7 +1162,7 @@ const labelA = { display: "block", fontSize: "11px", fontWeight: 500, color: "#4
 // install, since a logged-out visitor expects the same landing either way. Note this
 // makes guru names + H/S/I/A recap visible to anyone who opens the app/URL, with no
 // authentication gate — an intentional trade-off per the request, not an oversight.
-function PublicRekapLanding({ JADWAL, CL, kehadiranGuru, LEMBAGA, onMasuk }) {
+function PublicRekapLanding({ JADWAL, CL, kehadiranGuru, hariLibur, LEMBAGA, onMasuk }) {
   return (
     <div style={{ minHeight: "100vh", background: THEME.green[50], fontFamily: "system-ui,-apple-system,sans-serif" }}>
       <div style={{ background: `linear-gradient(160deg, ${THEME.green[900]}, ${THEME.green[700]})`, color: "white", padding: "28px 16px", textAlign: "center", boxShadow: THEME.shadow.raised }}>
@@ -1174,7 +1174,7 @@ function PublicRekapLanding({ JADWAL, CL, kehadiranGuru, LEMBAGA, onMasuk }) {
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px" }}>
           <GreenBtn onClick={onMasuk} style={{ padding: "9px 18px", fontSize: "13px" }}>🔐 Masuk</GreenBtn>
         </div>
-        <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} />
+        <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} hariLibur={hariLibur} />
       </div>
     </div>
   );
@@ -1285,15 +1285,25 @@ function DemoSec({ title, accounts, onSel }) {
 }
 
 // Which `notifikasi` entries belong to the given logged-in user — tu accounts see
-// warnings/izin addressed to their own layer, guru/wk accounts see anything addressed
-// to their own username (izin confirmations, peringatan sent to them). Admin/superadmin
-// aren't a target of either direction in this feature, so they see nothing here.
-function notifikasiForUser(notifikasi, user) {
-  if (!user) return [];
-  if (user.role === "tu") return (notifikasi || []).filter((n) => n.untukLayer === user.layer);
-  if (user.role === "guru" || user.role === "wk") return (notifikasi || []).filter((n) => n.untukUsername === user.username);
-  return [];
+// warnings/izin/pengajuan addressed to their own layer, guru/wk accounts see anything
+// addressed to their own username (peringatan, hasil pengajuan), and admin/superadmin
+// see entries addressed to role "admin" (koreksi kehadiran awaiting their approval).
+function notifikasiUntuk(n, user) {
+  if (!user) return false;
+  if (user.role === "tu") return n.untukLayer === user.layer;
+  if (user.role === "guru" || user.role === "wk") return n.untukUsername === user.username;
+  if (user.role === "admin" || user.role === "superadmin") return n.untukRole === "admin";
+  return false;
 }
+function notifikasiForUser(notifikasi, user) {
+  return (notifikasi || []).filter((n) => notifikasiUntuk(n, user));
+}
+const NOTIF_TIPE = {
+  izin: { label: "📨 Izin", color: "#1e40af" },
+  peringatan: { label: "⚠️ Peringatan", color: "#92400e" },
+  pengajuan: { label: "✏️ Pengajuan Perubahan", color: "#6d28d9" },
+  hasil: { label: "📋 Hasil Pengajuan", color: "#065f46" },
+};
 
 // Realtime-synced in-app notification bell — the reliable fallback/history for the
 // Guru↔TU izin/peringatan flow that works regardless of OS push permission/delivery
@@ -1302,7 +1312,7 @@ function NotifBell({ notifikasi, user, onOpen }) {
   const [open, setOpen] = useState(false);
   const mine = useMemo(() => notifikasiForUser(notifikasi, user).slice().reverse(), [notifikasi, user]);
   const unread = mine.filter((n) => !n.dibaca).length;
-  if (!user || (user.role !== "tu" && user.role !== "guru" && user.role !== "wk")) return null;
+  if (!user) return null;
   return (
     <div style={{ position: "relative" }}>
       <button onClick={() => setOpen((o) => { const next = !o; if (next) onOpen?.(); return next; })} title="Notifikasi" className="btn-hover" style={{ position: "relative", background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: THEME.radius.sm, padding: "6px 10px", cursor: "pointer", fontSize: "14px" }}>
@@ -1317,7 +1327,7 @@ function NotifBell({ notifikasi, user, onOpen }) {
           ) : (
             mine.slice(0, 30).map((n) => (
               <div key={n.id} style={{ padding: "9px 12px", borderBottom: "1px solid #f9fafb", fontSize: "11.5px", background: n.dibaca ? "white" : THEME.green[50] }}>
-                <div style={{ fontWeight: 600, color: n.tipe === "izin" ? "#1e40af" : "#92400e", marginBottom: "2px" }}>{n.tipe === "izin" ? "📨 Izin" : "⚠️ Peringatan"}</div>
+                <div style={{ fontWeight: 600, color: (NOTIF_TIPE[n.tipe] || NOTIF_TIPE.peringatan).color, marginBottom: "2px" }}>{(NOTIF_TIPE[n.tipe] || NOTIF_TIPE.peringatan).label}</div>
                 <div style={{ color: "#374151" }}>{n.pesan}</div>
                 <div style={{ color: "#9ca3af", fontSize: "10px", marginTop: "3px" }}>{new Date(n.waktu).toLocaleString("id-ID")}</div>
               </div>
@@ -1346,8 +1356,8 @@ function NotifBell({ notifikasi, user, onOpen }) {
 // room to stay pinned across the whole page's scroll range in the first place.
 const Header = React.forwardRef(function Header({ sidebarOpen, onToggleSidebar, LEMBAGA, user, notifikasi, setNotifikasi, deviceTokens, setDeviceTokens }, ref) {
   const markAllRead = () => {
-    if (!notifikasi || !notifikasi.some((n) => !n.dibaca && (n.untukUsername === user.username || n.untukLayer === user.layer))) return;
-    setNotifikasi((prev) => prev.map((n) => ((n.untukUsername === user.username || n.untukLayer === user.layer) ? { ...n, dibaca: true } : n)));
+    if (!notifikasi || !notifikasi.some((n) => !n.dibaca && notifikasiUntuk(n, user))) return;
+    setNotifikasi((prev) => prev.map((n) => (notifikasiUntuk(n, user) ? { ...n, dibaca: true } : n)));
   };
   const [notifPerm, setNotifPerm] = useState(() => (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
   const wantsPush = user.role === "tu" || user.role === "guru" || user.role === "wk";
@@ -1599,7 +1609,11 @@ function buildNavGroups(user, isSuperAdmin) {
           { key: "mapel", label: "Mata Pelajaran", icon: "📚" },
           { key: "guru", label: "Penugasan Guru", icon: "🧑‍🏫" },
         ] },
-        { type: "item", key: "kehadiran", label: "Rekap Kehadiran", icon: "✅" },
+        { type: "group", key: "kehadiran-admin", label: "Kehadiran Guru", icon: "✅", items: [
+          { key: "kehadiran", label: "Rekap Kehadiran", icon: "✅" },
+          { key: "hari-libur", label: "Hari Libur", icon: "🏖️" },
+          { key: "persetujuan", label: "Persetujuan Koreksi", icon: "📨" },
+        ] },
       ]),
       ...(isSuperAdmin ? [
         { type: "group", key: "susun-jadwal", label: "Susun Jadwal", icon: "🗓️", items: SUSUN_JADWAL_ITEMS },
@@ -1631,6 +1645,7 @@ function buildNavGroups(user, isSuperAdmin) {
       { type: "group", key: "kehadiran-guru", label: "Kehadiran Guru", icon: "✅", items: [
         { key: "isi", label: "Isi Kehadiran", icon: "✏️" },
         { key: "rekap", label: "Rekap", icon: "📊" },
+        { key: "pengajuan", label: "Pengajuan", icon: "📨" },
       ] },
     ];
   }
@@ -1800,7 +1815,7 @@ function AdminLembaga({ LEMBAGA, setLEMBAGA }) {
   );
 }
 
-function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, setSEM, GM, setGM, ACCS, setACCS, archives, setArchives, JADWAL, kehadiranGuru, setKehadiranGuru, isSuperAdmin }) {
+function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, setSEM, GM, setGM, ACCS, setACCS, archives, setArchives, JADWAL, kehadiranGuru, setKehadiranGuru, hariLibur, setHariLibur, pengajuanKehadiran, setPengajuanKehadiran, isSuperAdmin }) {
   const ks = sortedKelas(CL);
   const tot = ks.reduce((s, k) => s + (ST[k] || []).length, 0);
   const group1 = ks.filter((k) => KELAS_ORDER.includes(k));
@@ -1837,12 +1852,17 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
     const archiveKey = `${SEM.tipe}-${(SEM.tahun || "").replace(/\D+/g, "-")}-${Date.now()}`;
     setArchives((prev) => ({
       ...prev,
-      [archiveKey]: { tipe: SEM.tipe, tahun: SEM.tahun, archivedAt: new Date().toISOString(), CL, ST, GM, ACCS, allG, allKep, kehadiranGuru },
+      [archiveKey]: { tipe: SEM.tipe, tahun: SEM.tahun, archivedAt: new Date().toISOString(), CL, ST, GM, ACCS, allG, allKep, kehadiranGuru, hariLibur, pengajuanKehadiran },
     }));
     setSEM({ tipe: semForm.tipe, tahun });
     setAllG({});
     setAllKep({});
     setKehadiranGuru({});
+    setPengajuanKehadiran([]);
+    // Hari Libur already marked for dates after today belong to the new semester too —
+    // only past ones go into the archive and are dropped from the active list.
+    const today = todayISO();
+    setHariLibur((prev) => Object.fromEntries(Object.entries(prev || {}).filter(([d]) => d > today)));
     // Accounts & penugasan (GM) stay intact across the reset — only re-locked, not
     // deleted, so a guru/wali can log in right after but can't input until Admin
     // re-confirms them for the new semester (see AdminPenugasan's confirm toggle).
@@ -1926,7 +1946,7 @@ function AdminDashboard({ CL, setCL, ST, allG, setAllG, allKep, setAllKep, SEM, 
       <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
         <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb", fontSize: "14px", fontWeight: 500, color: "#111827" }}>✅ Rekap Kehadiran Guru</div>
         <div style={{ padding: "14px" }}>
-          <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} />
+          <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} hariLibur={hariLibur} />
         </div>
       </div>
 
@@ -3971,17 +3991,19 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
   );
 }
 
-function AdminView({ CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, archives, setArchives, LEMBAGA, setLEMBAGA, JADWAL, setJADWAL, kehadiranGuru, setKehadiranGuru, isSuperAdmin, tab }) {
+function AdminView({ user, CL, setCL, ST, setST, GM, setGM, ACCS, setACCS, allG, setAllG, allKep, setAllKep, SEM, setSEM, archives, setArchives, LEMBAGA, setLEMBAGA, JADWAL, setJADWAL, kehadiranGuru, setKehadiranGuru, hariLibur, setHariLibur, pengajuanKehadiran, setPengajuanKehadiran, setNotifikasi, deviceTokens, isSuperAdmin, tab }) {
   return (
     <div style={{ padding: "16px", maxWidth: "1100px", margin: "0 auto" }}>
       <h2 style={{ fontSize: "17px", fontWeight: 500, color: "#111827", marginBottom: "12px" }}>Panel Admin</h2>
-      {tab === "dashboard" && <AdminDashboard CL={CL} setCL={setCL} ST={ST} allG={allG} allKep={allKep} SEM={SEM} setSEM={setSEM} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} archives={archives} setArchives={setArchives} JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={isSuperAdmin} />}
+      {tab === "dashboard" && <AdminDashboard CL={CL} setCL={setCL} ST={ST} allG={allG} allKep={allKep} SEM={SEM} setSEM={setSEM} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} archives={archives} setArchives={setArchives} JADWAL={JADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} hariLibur={hariLibur} setHariLibur={setHariLibur} pengajuanKehadiran={pengajuanKehadiran} setPengajuanKehadiran={setPengajuanKehadiran} isSuperAdmin={isSuperAdmin} />}
       {tab === "kelas" && <AdminKelas CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} setACCS={setACCS} setAllG={setAllG} setAllKep={setAllKep} />}
       {tab === "wali" && <AdminWali ACCS={ACCS} setACCS={setACCS} CL={CL} setCL={setCL} GM={GM} setGM={setGM} />}
       {tab === "siswa" && <AdminSiswa CL={CL} ST={ST} setST={setST} setAllG={setAllG} setAllKep={setAllKep} />}
       {tab === "mapel" && <AdminMapel CL={CL} setCL={setCL} setGM={setGM} />}
       {tab === "guru" && <AdminPenugasan ACCS={ACCS} setACCS={setACCS} GM={GM} setGM={setGM} CL={CL} setCL={setCL} />}
-      {tab === "kehadiran" && <AdminKehadiranGuru JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} LEMBAGA={LEMBAGA} SEM={SEM} />}
+      {tab === "kehadiran" && <AdminKehadiranGuru JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} hariLibur={hariLibur} LEMBAGA={LEMBAGA} SEM={SEM} />}
+      {tab === "hari-libur" && <AdminHariLibur hariLibur={hariLibur} setHariLibur={setHariLibur} />}
+      {tab === "persetujuan" && <AdminPersetujuanKoreksi user={user} JADWAL={JADWAL} pengajuanKehadiran={pengajuanKehadiran} setPengajuanKehadiran={setPengajuanKehadiran} setKehadiranGuru={setKehadiranGuru} setNotifikasi={setNotifikasi} deviceTokens={deviceTokens} />}
       {tab.startsWith("jadwal-") && isSuperAdmin && <AdminJadwal JADWAL={JADWAL} setJADWAL={setJADWAL} LEMBAGA={LEMBAGA} SEM={SEM} ACCS={ACCS} GM={GM} CL={CL} tab={tab} />}
       {tab === "identitas" && isSuperAdmin && <AdminLembaga LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} />}
     </div>
@@ -4996,7 +5018,7 @@ function JadwalPerKelasTab({ kelasKode, setKelasKode, putraKelas, putriKelas, JA
   );
 }
 
-function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKehadiranGuru, ACCS, deviceTokens, setNotifikasi, locked, tab }) {
+function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKehadiranGuru, hariLibur, pengajuanKehadiran, setPengajuanKehadiran, ACCS, deviceTokens, setNotifikasi, locked, tab }) {
   const putraKelas = useMemo(() => jadwalPutraKelas(JADWAL), [JADWAL.kelasPutra]); // eslint-disable-line
   const putriKelas = useMemo(() => jadwalPutriKelas(CL || {}, JADWAL), [CL, JADWAL.kelasPutriNama, JADWAL.kelasPutra]); // eslint-disable-line
   const wustoPiMirror = useMemo(() => computeWustoPiMirror(putriKelas), [putriKelas]);
@@ -5046,6 +5068,25 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKeha
     sendPushBestEffort(deviceTokens, tuUsernames, { title: "📨 Izin Guru", body: pesan, data: { tipe: "izin" } }).catch(() => {});
   };
 
+  // "Ajukan Perubahan" from Rekap Saya — for a slot that was never filled (counted as
+  // Hadir otomatis) or filled wrongly. Unlike izin this is NOT applied straight away: it
+  // always goes to that layer's TU first, who either applies it (≤ KOREKSI_LANGSUNG_HARI
+  // days old) or forwards it on to Admin (older) — see prosesPengajuan.
+  const ajukanPerubahan = (row, dateISO, statusBaru, alasan) => {
+    if (locked || !myGuru) return;
+    const statusLama = row.rec?.status || (row.otomatis ? "O" : "");
+    const p = makePengajuan({ dateISO, layer: row.layer, jamKode: row.jam.kode, kelasKode: row.kelas.kode, kelasLabel: row.kelas.label, g: myGuru.kode, statusLama, statusBaru, alasan, dari: user.username, dariRole: "guru", tahap: "tu" });
+    setPengajuanKehadiran((prev) => [...prev, p]);
+    const pesan = `${myGuru.nama} mengajukan perubahan kehadiran — ${row.kelas.label} Jam ${row.jam.kode} (${formatTanggalIndo(dateISO)}): ${labelStatusRekap(statusLama)} → ${labelStatusRekap(statusBaru)}. Alasan: ${alasan}`;
+    setNotifikasi((prev) => trimNotifikasi([...prev, makeNotifikasi({ dari: user.username, untukLayer: row.layer, tipe: "pengajuan", pesan, kelas: row.kelas.label, jam: row.jam.kode })]));
+    const tuUsernames = (ACCS || []).filter((a) => a.role === "tu" && a.layer === row.layer).map((a) => a.u);
+    sendPushBestEffort(deviceTokens, tuUsernames, { title: "✏️ Pengajuan Perubahan Kehadiran", body: pesan, data: { tipe: "pengajuan" } }).catch(() => {});
+  };
+  const pengajuanSaya = useMemo(
+    () => (pengajuanKehadiran || []).filter((p) => p.dari === user.username).slice().reverse(),
+    [pengajuanKehadiran, user.username]
+  );
+
   return (
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
       <div style={{ background: `linear-gradient(135deg, ${THEME.green[900]}, ${THEME.green[700]})`, borderRadius: THEME.radius.md, padding: "14px 18px", color: "white", marginBottom: "16px", boxShadow: THEME.shadow.raised }}>
@@ -5074,7 +5115,17 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKeha
       )}
       {tab === "rekap" && (
         myGuru ? (
-          <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} scopeGuruKode={myGuru.kode} />
+          <>
+            <p style={{ fontSize: "11.5px", color: "#6b7280", marginTop: 0, marginBottom: "12px" }}>
+              ✏️ Kalau ada kehadiran yang tidak terisi atau tidak sesuai kenyataan, pilih tampilan <strong>Per Hari</strong>, pilih tanggalnya, lalu tekan <strong>Ajukan Perubahan</strong> pada slot tersebut. Pengajuan akan diperiksa TU.
+            </p>
+            <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} hariLibur={hariLibur} scopeGuruKode={myGuru.kode}
+              pengajuanKehadiran={pengajuanKehadiran} onAjukanPerubahan={ajukanPerubahan} locked={locked} />
+            <div style={{ marginTop: "18px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 600, color: "#374151", marginBottom: "8px" }}>📨 Pengajuan Saya</div>
+              <PengajuanList items={pengajuanSaya} guruByKode={guruByKode} mode="guru" emptyText="Belum ada pengajuan perubahan." />
+            </div>
+          </>
         ) : (
           <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
             Akun Anda belum terhubung dengan data guru di Susun Jadwal. Hubungi Admin untuk menghubungkan akun ini lewat tab Susun Jadwal → Guru & Mapel.
@@ -5103,7 +5154,22 @@ const KEHADIRAN_STATUS = [
 // checks all pass) — a distinct, more saturated set from KEHADIRAN_STATUS's own
 // bg/fg badge-tint pairs above, since a solid chart fill and a light text badge are
 // different visual jobs. Same H/S/I/A key order as KEHADIRAN_STATUS.
-const KEHADIRAN_CHART_HUE = { H: "#008300", S: "#eda100", I: "#2a78d6", A: "#e34948" };
+// O ("Hadir otomatis") is a lighter tint of H's own green — same meaning, visibly
+// presumed rather than recorded — added after the original H/S/I/A palette validation.
+const KEHADIRAN_CHART_HUE = { H: "#008300", O: "#8fcf8f", S: "#eda100", I: "#2a78d6", A: "#e34948" };
+// Recap-only 5th category: a past school-day slot TU never filled is counted as Hadir
+// ("dianggap hadir" — per explicit policy, unless that day is marked Hari Libur), but
+// kept visually distinct from a real TU-recorded Hadir so Admin can see how much of the
+// recap is presumed. Deliberately NOT part of KEHADIRAN_STATUS, which drives TU's own
+// H/S/I/A buttons — "O" is never stored, only derived (see aggregateKehadiran).
+const KEHADIRAN_REKAP_STATUS = [
+  KEHADIRAN_STATUS[0],
+  { kode: "O", label: "Hadir (otomatis)", bg: "#ecfdf5", fg: "#047857" },
+  ...KEHADIRAN_STATUS.slice(1),
+];
+function labelStatusRekap(kode) {
+  return KEHADIRAN_REKAP_STATUS.find((s) => s.kode === kode)?.label || "Belum diisi";
+}
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -5138,6 +5204,137 @@ function hariForISO(iso) {
   const [y, m, d] = iso.split("-").map(Number);
   return JS_DAY_TO_HARI[new Date(y, m - 1, d).getDay()] || null;
 }
+// Koreksi susulan windows (per explicit policy): TU may fill/correct any date within the
+// last KOREKSI_LANGSUNG_HARI days directly; older dates are still correctable but only
+// through an Admin-approved pengajuan, and only until the end of the month after that
+// date's own month — after that the month is closed ("terkunci").
+const KOREKSI_LANGSUNG_HARI = 7;
+function batasKoreksiAdmin(today) {
+  const [y, m] = today.split("-").map(Number);
+  const d = new Date(y, m - 2, 1); // first day of the previous month
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+function koreksiTier(dateISO, today = todayISO()) {
+  if (dateISO > today) return "mendatang";
+  if (dateISO >= addDaysISO(today, -KOREKSI_LANGSUNG_HARI)) return "langsung";
+  if (dateISO >= batasKoreksiAdmin(today)) return "admin";
+  return "terkunci";
+}
+// Hari Libur set by Admin, { [dateISO]: { ket, layer: "semua"|"putra"|"putri" } } —
+// slots on such a day are neither fillable nor counted in any recap.
+function liburUntuk(hariLibur, dateISO, layer) {
+  const e = hariLibur?.[dateISO];
+  return e && (e.layer === "semua" || e.layer === layer) ? e : null;
+}
+// "Tanggal isian pertama" per layer — the earliest date TU actually recorded anything
+// (a guru's own izin doesn't count, it can be filed ahead of time). Hadir otomatis only
+// starts from here, so days before TU began using the feature this semester don't
+// suddenly count as attended.
+function firstIsianByLayer(kehadiranGuru) {
+  const first = {};
+  Object.entries(kehadiranGuru || {}).forEach(([dateISO, day]) => {
+    ["putra", "putri"].forEach((layer) => {
+      if (first[layer] && first[layer] <= dateISO) return;
+      const ada = Object.values(day?.[layer] || {}).some((jamData) => Object.values(jamData || {}).some((rec) => rec?.status && rec.sumber !== "guru"));
+      if (ada) first[layer] = dateISO;
+    });
+  });
+  return first;
+}
+function slotOtomatis(rec, dateISO, layer, firstIsian, hariLibur, today) {
+  return !rec?.status && !!firstIsian[layer] && dateISO >= firstIsian[layer] && dateISO < today && !liburUntuk(hariLibur, dateISO, layer);
+}
+function slotKey(dateISO, layer, jamKode, kelasKode) {
+  return `${dateISO}|${layer}|${jamKode}|${kelasKode}`;
+}
+// Immutable single-slot write into kehadiranGuru (rec undefined clears the slot).
+function withSlotRecord(prev, dateISO, layer, jamKode, kelasKode, rec) {
+  const day = prev[dateISO] || {};
+  const layerData = day[layer] || {};
+  const jamData = layerData[jamKode] || {};
+  return { ...prev, [dateISO]: { ...day, [layer]: { ...layerData, [jamKode]: { ...jamData, [kelasKode]: rec } } } };
+}
+
+// Pengajuan perubahan kehadiran (`pengajuanKehadiran` slice, flat array, newest last).
+// tahap "tu" = waiting on that layer's TU (filed by a guru); tahap "admin" = waiting on
+// Admin/Superadmin (filed by TU for a date older than KOREKSI_LANGSUNG_HARI, or a guru's
+// request TU approved but which is that old). statusLama "O" = was Hadir otomatis.
+function makePengajuan({ dateISO, layer, jamKode, kelasKode, kelasLabel, g, statusLama, statusBaru, alasan, dari, dariRole, tahap }) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    dateISO, layer, jamKode, kelasKode, kelasLabel, g,
+    statusLama: statusLama || "", statusBaru, alasan: alasan || "",
+    dari, dariRole, tahap, status: "menunggu",
+    dibuatAt: new Date().toISOString(),
+  };
+}
+function pengajuanMenungguBySlot(list) {
+  const out = {};
+  (list || []).forEach((p) => {
+    if (p.status === "menunggu") out[slotKey(p.dateISO, p.layer, p.jamKode, p.kelasKode)] = p;
+  });
+  return out;
+}
+// Shared Setujui/Tolak handling for both TU's and Admin's pengajuan screens. A TU
+// approving something older than KOREKSI_LANGSUNG_HARI only forwards it to Admin; every
+// other approval writes the new status straight into kehadiranGuru. The original filer
+// (guru by username, or TU by layer) is told the outcome via notifikasi.
+function prosesPengajuan({ oleh, peran, setPengajuanKehadiran, setKehadiranGuru, setNotifikasi, deviceTokens }, p, aksi, catatan = "") {
+  const now = new Date().toISOString();
+  const slotLabel = `${p.kelasLabel} Jam ${p.jamKode} (${formatTanggalIndo(p.dateISO)})`;
+  const update = (patch) => setPengajuanKehadiran((prev) => prev.map((x) => (x.id === p.id ? { ...x, ...patch } : x)));
+  const kabari = (pesan) => {
+    const target = p.dariRole === "guru" ? { untukUsername: p.dari } : { untukLayer: p.layer };
+    setNotifikasi((prev) => trimNotifikasi([...prev, makeNotifikasi({ dari: oleh, ...target, tipe: "hasil", pesan, kelas: p.kelasLabel, jam: p.jamKode })]));
+    if (p.dariRole === "guru") sendPushBestEffort(deviceTokens, [p.dari], { title: "📋 Hasil Pengajuan", body: pesan, data: { tipe: "hasil" } }).catch(() => {});
+  };
+  if (aksi === "tolak") {
+    update({ status: "ditolak", catatanTolak: catatan, diprosesOleh: oleh, diprosesAt: now });
+    kabari(`Pengajuan perubahan ${slotLabel} ditolak${catatan ? `: ${catatan}` : "."}`);
+    return;
+  }
+  if (peran === "tu" && koreksiTier(p.dateISO) === "admin") {
+    update({ tahap: "admin", disetujuiTuOleh: oleh, disetujuiTuAt: now });
+    setNotifikasi((prev) => trimNotifikasi([...prev, makeNotifikasi({ dari: oleh, untukRole: "admin", tipe: "pengajuan", pesan: `Pengajuan perubahan kehadiran ${slotLabel}: ${labelStatusRekap(p.statusLama)} → ${labelStatusRekap(p.statusBaru)} menunggu persetujuan Admin.`, kelas: p.kelasLabel, jam: p.jamKode })]));
+    kabari(`Pengajuan perubahan ${slotLabel} disetujui TU dan diteruskan ke Admin (lebih dari ${KOREKSI_LANGSUNG_HARI} hari lalu).`);
+    return;
+  }
+  setKehadiranGuru((prev) => withSlotRecord(prev, p.dateISO, p.layer, p.jamKode, p.kelasKode, {
+    g: p.g, status: p.statusBaru, keterangan: p.statusBaru === "I" ? p.alasan : undefined,
+    sumber: "koreksi", diisiOleh: oleh, diisiAt: now, pengajuanId: p.id,
+  }));
+  update({ status: "disetujui", diprosesOleh: oleh, diprosesAt: now });
+  kabari(`Pengajuan perubahan ${slotLabel} disetujui — status kini ${labelStatusRekap(p.statusBaru)}.`);
+}
+
+// TU's "isi yang kosong" reminder window, per explicit request: at the end of every
+// school week (Kamis) and every month (its last school day — Jumat is libur, so a month
+// ending on Jumat closes on Kamis), plus a one-day grace on the next school day (Sabtu /
+// first school day of the month) in case TU didn't open the app that day. Month takes
+// priority since it already covers the week.
+function periodePengingat(today) {
+  const bulanOf = (iso) => getBulanRange(iso.slice(0, 7));
+  const labelBulan = (iso) => `${BULAN_ID[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
+  let lastSchool = bulanOf(today).end;
+  while (!hariForISO(lastSchool)) lastSchool = addDaysISO(lastSchool, -1);
+  let firstSchool = bulanOf(today).start;
+  while (!hariForISO(firstSchool)) firstSchool = addDaysISO(firstSchool, 1);
+  if (today === lastSchool) return { jenis: "bulan", label: `bulan ${labelBulan(today)}`, start: bulanOf(today).start, end: today };
+  if (today === firstSchool) {
+    const prevEnd = addDaysISO(bulanOf(today).start, -1);
+    return { jenis: "bulan", label: `bulan ${labelBulan(prevEnd)}`, start: bulanOf(prevEnd).start, end: prevEnd };
+  }
+  const hari = hariForISO(today);
+  if (hari === "KAMIS") {
+    const w = getSekolahWeekRange(today);
+    return { jenis: "minggu", label: "minggu ini", start: w.start, end: today };
+  }
+  if (hari === "SABTU") {
+    const w = getSekolahWeekRange(addDaysISO(today, -2));
+    return { jenis: "minggu", label: "minggu lalu", start: w.start, end: w.end };
+  }
+  return null;
+}
 // Parses a JADWAL_JAM "waktu" string like "05.30 - 06.30" into its start time as minutes
 // since midnight (330) — used to compare against the current clock time for TU's "Kirim
 // Peringatan" button (guru not yet marked present ~10 minutes after class start).
@@ -5169,10 +5366,10 @@ const NOTIF_TRIM_LIMIT = 150;
 function trimNotifikasi(list) {
   return list.length > NOTIF_TRIM_LIMIT ? list.slice(list.length - NOTIF_TRIM_LIMIT) : list;
 }
-function makeNotifikasi({ dari, untukUsername = null, untukLayer = null, tipe, pesan, kelas = null, jam = null }) {
+function makeNotifikasi({ dari, untukUsername = null, untukLayer = null, untukRole = null, tipe, pesan, kelas = null, jam = null }) {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    dari, untukUsername, untukLayer, tipe, pesan, kelas, jam,
+    dari, untukUsername, untukLayer, untukRole, tipe, pesan, kelas, jam,
     waktu: new Date().toISOString(),
     dibaca: false,
   };
@@ -5269,16 +5466,21 @@ function rowSpanGroups(rows, keyFn) {
 // "Per Hari" view — same Jam(merged)/Kelas/Guru/Mapel/Status/Keterangan structure,
 // same Jam I/II tint, same Nama Panggilan-first guru display, so the two always look
 // like the same screen per the user's explicit request. `editable` swaps the Status
-// buttons/Keterangan inputs for plain read-only badges/text.
-function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, onSetStatus, onPatchRecord, showLayer, onKirimPeringatan }) {
+// buttons/Keterangan inputs for plain read-only badges/text. Rows may also carry
+// `otomatis` (unfilled past slot, counted as Hadir otomatis) and `pending` (a pengajuan
+// perubahan still awaiting TU/Admin); `onPatchRecord` null makes the Keterangan column
+// read-only even when editable (TU on a date that needs Admin approval), and
+// `renderAksi` adds a trailing per-row action column (guru's "Ajukan Perubahan").
+function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, onSetStatus, onPatchRecord, showLayer, onKirimPeringatan, renderAksi }) {
   const { startOf, countOf } = rowSpanGroups(rows, (r) => `${r.layer}|${r.jam.kode}`);
+  const autoSt = KEHADIRAN_REKAP_STATUS.find((s) => s.kode === "O");
   return (
     <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
             <tr style={{ background: "#f9fafb" }}>
-              {["Jam", ...(showLayer ? ["Layer"] : []), "Kelas", "Guru", "Mapel", "Status", editable ? "Keterangan" : "Detail"].map((h) => (
+              {["Jam", ...(showLayer ? ["Layer"] : []), "Kelas", "Guru", "Mapel", "Status", editable ? "Keterangan" : "Detail", ...(renderAksi ? ["Aksi"] : [])].map((h) => (
                 <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 500, fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
@@ -5312,7 +5514,17 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
                       </div>
                     ) : status ? (
                       <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: 600, background: st?.bg, color: st?.fg }}>{st?.label || status}</span>
+                    ) : r.otomatis ? (
+                      <span title="Tidak diisi TU — dihitung Hadir" style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: 600, background: autoSt.bg, color: autoSt.fg, border: "1px dashed #6ee7b7" }}>{autoSt.label}</span>
                     ) : "-"}
+                    {editable && !status && r.otomatis && (
+                      <div style={{ marginTop: "4px", fontSize: "9.5px", color: "#047857" }}>Belum diisi — dihitung Hadir (otomatis)</div>
+                    )}
+                    {r.pending && (
+                      <div style={{ marginTop: "4px", fontSize: "9.5px", color: "#6d28d9" }}>
+                        ⏳ Diajukan → {labelStatusRekap(r.pending.statusBaru)} (menunggu {r.pending.tahap === "admin" ? "Admin" : "TU"})
+                      </div>
+                    )}
                     {editable && !status && onKirimPeringatan && r.peringatanEligible && (
                       rec?.peringatanAt ? (
                         <div style={{ marginTop: "4px", fontSize: "9.5px", color: "#9ca3af" }}>
@@ -5327,7 +5539,7 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
                     )}
                   </td>
                   <td style={{ padding: "8px 10px", minWidth: "180px", verticalAlign: "top" }}>
-                    {editable ? (
+                    {editable && onPatchRecord ? (
                       <>
                         {status === "I" && (
                           <input type="text" disabled={locked} placeholder="Keterangan izin karena apa..." value={rec?.keterangan || ""}
@@ -5356,6 +5568,7 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
                       </span>
                     )}
                   </td>
+                  {renderAksi && <td style={{ padding: "8px 10px", verticalAlign: "top", minWidth: "150px" }}>{renderAksi(r)}</td>}
                 </tr>
               );
             })}
@@ -5366,10 +5579,12 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
   );
 }
 
-// Tata Usaha Putra/Putri: fills in guru attendance for TODAY only (per the confirmed
-// scope — no backfill/future dates, to avoid mis-dated entries), one layer (their own
-// Putra or Putri jadwal). Writes go straight to kehadiranGuru on each click — this is
-// a same-day factual log, not a draft that needs review before committing, so it skips
+// Tata Usaha Putra/Putri: fills in guru attendance for their own layer (Putra or Putri
+// jadwal). Defaults to today; per the koreksi susulan policy TU may also pick any date in
+// the last KOREKSI_LANGSUNG_HARI days and fill/correct it directly, or an older date (back
+// to the start of the previous month) where every status change becomes a pengajuan for
+// Admin instead of a direct write. Writes go straight to kehadiranGuru on each click —
+// this is a factual log, not a draft that needs review before committing, so it skips
 // the local-draft+Simpan pattern used for grade entry elsewhere in the app. The guru
 // kode is captured into the record itself (not just the kelas/jam slot) so a later
 // schedule change never retroactively changes who an old attendance mark belongs to.
@@ -5377,11 +5592,17 @@ function KehadiranSlotTable({ rows, guruByKode, mapelByKode, editable, locked, o
 // to a "Hadir" mark (a guru who came late is still "hadir"), while "Izin" carries an
 // optional free-text reason instead. Listed as a flat one-row-per-slot list (rather
 // than kelas-as-columns) so it scrolls vertically instead of sideways through 9+ kelas.
-function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, ACCS, deviceTokens, setNotifikasi, locked, tab }) {
+function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, hariLibur, pengajuanKehadiran, setPengajuanKehadiran, ACCS, deviceTokens, setNotifikasi, locked, tab }) {
   const layer = user.layer;
-  const iso = todayISO();
+  const today = todayISO();
+  const [iso, setIso] = useState(today);
+  const isToday = iso === today;
+  const tier = koreksiTier(iso, today);
+  const libur = liburUntuk(hariLibur, iso, layer);
   const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
   const mapelByKode = useMemo(() => Object.fromEntries((JADWAL.mapel || []).map((m) => [m.kode, m])), [JADWAL.mapel]);
+  const firstIsian = useMemo(() => firstIsianByLayer(kehadiranGuru), [kehadiranGuru]);
+  const pendingBySlot = useMemo(() => pengajuanMenungguBySlot(pengajuanKehadiran), [pengajuanKehadiran]);
   const { hari, rows: rawRows } = useMemo(() => buildKehadiranDayRows(JADWAL, CL, iso, kehadiranGuru, layer, null), [JADWAL, CL, iso, kehadiranGuru, layer]);
   // Re-render every 30s so a row's "Kirim Peringatan" button appears the moment it
   // crosses the 10-menit threshold, without the TU needing to manually refresh the page.
@@ -5393,35 +5614,54 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, AC
   const rows = useMemo(
     () => rawRows.map((r) => {
       const startMin = jamStartMinutes(r.jam.waktu);
-      const peringatanEligible = !r.rec?.status && startMin != null && nowMinutesOfDay() - startMin >= 10;
-      return { ...r, peringatanEligible };
+      const peringatanEligible = isToday && !r.rec?.status && startMin != null && nowMinutesOfDay() - startMin >= 10;
+      return {
+        ...r,
+        peringatanEligible,
+        otomatis: slotOtomatis(r.rec, iso, r.layer, firstIsian, hariLibur, today),
+        pending: pendingBySlot[slotKey(iso, r.layer, r.jam.kode, r.kelas.kode)] || null,
+      };
     }),
-    [rawRows, tick] // eslint-disable-line
+    [rawRows, tick, isToday, iso, firstIsian, hariLibur, today, pendingBySlot] // eslint-disable-line
   );
 
   const patchRecord = (rLayer, jamKode, kelasKode, patch) => {
-    if (locked) return;
-    setKehadiranGuru((prev) => {
-      const day = prev[iso] || {};
-      const layerData = day[rLayer] || {};
-      const jamData = layerData[jamKode] || {};
-      const next = { ...(jamData[kelasKode] || {}), ...patch };
-      return { ...prev, [iso]: { ...day, [rLayer]: { ...layerData, [jamKode]: { ...jamData, [kelasKode]: next } } } };
-    });
+    if (locked || tier !== "langsung") return;
+    setKehadiranGuru((prev) => withSlotRecord(prev, iso, rLayer, jamKode, kelasKode, { ...(prev[iso]?.[rLayer]?.[jamKode]?.[kelasKode] || {}), ...patch }));
   };
   const clearRecord = (rLayer, jamKode, kelasKode) => {
+    if (locked || tier !== "langsung") return;
+    setKehadiranGuru((prev) => withSlotRecord(prev, iso, rLayer, jamKode, kelasKode, undefined));
+  };
+  const kirimNotifAdmin = (pesan, kelas = null, jam = null) => {
+    setNotifikasi((prev) => trimNotifikasi([...prev, makeNotifikasi({ dari: user.username, untukRole: "admin", tipe: "pengajuan", pesan, kelas, jam })]));
+  };
+  // Older than KOREKSI_LANGSUNG_HARI: a status click files a pengajuan for Admin instead
+  // of writing — the slot keeps its current (or otomatis) status until Admin approves.
+  const ajukanKeAdmin = (row, status) => {
     if (locked) return;
-    setKehadiranGuru((prev) => {
-      const day = prev[iso] || {};
-      const layerData = day[rLayer] || {};
-      const jamData = layerData[jamKode] || {};
-      return { ...prev, [iso]: { ...day, [rLayer]: { ...layerData, [jamKode]: { ...jamData, [kelasKode]: undefined } } } };
-    });
+    if (row.pending) { alert("Slot ini sudah punya pengajuan yang masih menunggu persetujuan."); return; }
+    const statusLama = row.rec?.status || (row.otomatis ? "O" : "");
+    if (statusLama === status) return;
+    const alasan = window.prompt(
+      `Tanggal ini sudah lebih dari ${KOREKSI_LANGSUNG_HARI} hari lalu, jadi perubahan perlu persetujuan Admin.\n\n` +
+      `${row.kelas.label} Jam ${row.jam.kode}: ${labelStatusRekap(statusLama)} → ${labelStatusRekap(status)}\n\nAlasan koreksi:`
+    );
+    if (alasan === null) return;
+    if (!alasan.trim()) { alert("Alasan koreksi wajib diisi."); return; }
+    const p = makePengajuan({ dateISO: iso, layer: row.layer, jamKode: row.jam.kode, kelasKode: row.kelas.kode, kelasLabel: row.kelas.label, g: row.rec?.g || row.cell.g, statusLama, statusBaru: status, alasan: alasan.trim(), dari: user.username, dariRole: "tu", tahap: "admin" });
+    setPengajuanKehadiran((prev) => [...prev, p]);
+    kirimNotifAdmin(`${user.name || user.username} mengajukan koreksi kehadiran — ${row.kelas.label} Jam ${row.jam.kode} (${formatTanggalIndo(iso)}): ${labelStatusRekap(statusLama)} → ${labelStatusRekap(status)}.`, row.kelas.label, row.jam.kode);
   };
   const setStatus = (rLayer, jamKode, kelasKode, guruKode, status) => {
+    if (tier === "admin") {
+      const row = rows.find((r) => r.layer === rLayer && r.jam.kode === jamKode && r.kelas.kode === kelasKode);
+      if (row) ajukanKeAdmin(row, status);
+      return;
+    }
     const existing = kehadiranGuru?.[iso]?.[rLayer]?.[jamKode]?.[kelasKode] || null;
     if (existing?.status === status) { clearRecord(rLayer, jamKode, kelasKode); return; }
-    patchRecord(rLayer, jamKode, kelasKode, { g: guruKode, status, keterangan: undefined, telat: undefined, datang: undefined });
+    patchRecord(rLayer, jamKode, kelasKode, { g: guruKode, status, keterangan: undefined, telat: undefined, datang: undefined, sumber: isToday ? "tu" : "susulan", diisiOleh: user.username, diisiAt: new Date().toISOString() });
   };
   // TU warns a guru who's ~10 menit past class start with no status recorded yet — writes
   // `peringatanAt` onto the (still-empty) record via patchRecord's existing spread-merge
@@ -5439,15 +5679,91 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, AC
     }
   };
 
+  // End-of-week / end-of-month reminder: every still-empty past slot in that period
+  // (today's own slots are left to the main table below). Days before this layer's
+  // first isian, libur days and closed months are skipped — none of them count anyway.
+  const pengingat = useMemo(() => {
+    const per = periodePengingat(today);
+    if (!per) return null;
+    const slots = [];
+    for (let d = per.start; d <= per.end && d < today; d = addDaysISO(d, 1)) {
+      if (!hariForISO(d) || liburUntuk(hariLibur, d, layer) || koreksiTier(d, today) === "terkunci") continue;
+      if (firstIsian[layer] && d < firstIsian[layer]) continue;
+      buildKehadiranDayRows(JADWAL, CL, d, kehadiranGuru, layer, null).rows.forEach((r) => {
+        if (r.rec?.status || pendingBySlot[slotKey(d, r.layer, r.jam.kode, r.kelas.kode)]) return;
+        slots.push({ ...r, dateISO: d });
+      });
+    }
+    const yesterday = addDaysISO(today, -1);
+    return slots.length > 0 ? { ...per, end: per.end < yesterday ? per.end : yesterday, slots } : null;
+  }, [today, JADWAL, CL, kehadiranGuru, hariLibur, layer, firstIsian, pendingBySlot]);
+  // `pilihan` holds only the slots TU marked explicitly; everything else becomes Hadir.
+  // Hadir is always written directly (it only confirms what's already counted), but a
+  // non-Hadir pick on a date older than KOREKSI_LANGSUNG_HARI becomes a pengajuan for
+  // Admin, with `ket` as its alasan. Returns false when it refused to save.
+  const simpanPengingat = (slots, pilihan, ket) => {
+    if (locked) return false;
+    const pilihanOf = (s) => pilihan[slotKey(s.dateISO, s.layer, s.jam.kode, s.kelas.kode)];
+    const keAdmin = slots.filter((s) => (pilihanOf(s) || "H") !== "H" && koreksiTier(s.dateISO, today) === "admin");
+    if (keAdmin.length > 0 && !ket.trim()) {
+      alert(`Ada ${keAdmin.length} slot lebih dari ${KOREKSI_LANGSUNG_HARI} hari lalu yang ditandai tidak hadir — isi alasan koreksi dulu, karena perlu persetujuan Admin.`);
+      return false;
+    }
+    const now = new Date().toISOString();
+    setKehadiranGuru((prev) => slots.reduce((next, s) => {
+      const st = pilihanOf(s) || "H";
+      if (st !== "H" && koreksiTier(s.dateISO, today) === "admin") return next;
+      if (next[s.dateISO]?.[s.layer]?.[s.jam.kode]?.[s.kelas.kode]?.status) return next; // filled meanwhile
+      return withSlotRecord(next, s.dateISO, s.layer, s.jam.kode, s.kelas.kode, {
+        g: s.cell.g, status: st, keterangan: st === "I" && ket.trim() ? ket.trim() : undefined,
+        sumber: pilihanOf(s) ? "susulan" : "massal", diisiOleh: user.username, diisiAt: now,
+      });
+    }, prev));
+    if (keAdmin.length > 0) {
+      setPengajuanKehadiran((prev) => [...prev, ...keAdmin.map((s) => makePengajuan({
+        dateISO: s.dateISO, layer: s.layer, jamKode: s.jam.kode, kelasKode: s.kelas.kode, kelasLabel: s.kelas.label, g: s.cell.g,
+        statusLama: slotOtomatis(null, s.dateISO, s.layer, firstIsian, hariLibur, today) ? "O" : "",
+        statusBaru: pilihanOf(s), alasan: ket.trim(), dari: user.username, dariRole: "tu", tahap: "admin",
+      }))]);
+      kirimNotifAdmin(`${user.name || user.username} mengajukan ${keAdmin.length} koreksi kehadiran guru (${layer === "putra" ? "Putra" : "Putri"}) yang menunggu persetujuan Admin.`);
+    }
+    return true;
+  };
+
+  const prosesCtx = { oleh: user.username, peran: "tu", setPengajuanKehadiran, setKehadiranGuru, setNotifikasi, deviceTokens };
+  const pengajuanLayer = useMemo(() => (pengajuanKehadiran || []).filter((p) => p.layer === layer).slice().reverse(), [pengajuanKehadiran, layer]);
+  const menungguTu = pengajuanLayer.filter((p) => p.status === "menunggu" && p.tahap === "tu");
+  const riwayatLayer = pengajuanLayer.filter((p) => !(p.status === "menunggu" && p.tahap === "tu")).slice(0, 50);
+  const tolak = (p) => {
+    const c = window.prompt("Alasan penolakan (opsional):");
+    if (c === null) return;
+    prosesPengajuan(prosesCtx, p, "tolak", c.trim());
+  };
+
   return (
     <div style={{ padding: "16px", maxWidth: "1100px", margin: "0 auto" }}>
       <div style={{ background: `linear-gradient(135deg, ${THEME.green[900]}, ${THEME.green[700]})`, borderRadius: THEME.radius.md, padding: "14px 18px", color: "white", marginBottom: "16px", boxShadow: THEME.shadow.raised }}>
         <h2 style={{ margin: "0 0 3px", fontSize: "18px", fontWeight: 500 }}>✅ Kehadiran Guru — Jadwal {layer === "putra" ? "Putra" : "Putri"}</h2>
-        <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>{hari ? `${HARI_LABEL_ID[hari]}, ${formatTanggalIndo(iso)}` : formatTanggalIndo(iso)}</p>
+        <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>
+          {tab === "isi" || !tab
+            ? `${hari ? `${HARI_LABEL_ID[hari]}, ` : ""}${formatTanggalIndo(iso)}${isToday ? "" : " (susulan)"}`
+            : `${hariForISO(today) ? `${HARI_LABEL_ID[hariForISO(today)]}, ` : ""}${formatTanggalIndo(today)}`}
+        </p>
       </div>
 
       {tab === "rekap" ? (
-        <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} scopeLayer={layer} />
+        <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} hariLibur={hariLibur} scopeLayer={layer} pengajuanKehadiran={pengajuanKehadiran} />
+      ) : tab === "pengajuan" ? (
+        <>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "#374151", marginBottom: "8px" }}>⏳ Menunggu Tindakan TU ({menungguTu.length})</div>
+          <p style={{ fontSize: "11.5px", color: "#6b7280", marginTop: 0, marginBottom: "10px" }}>
+            Pengajuan dari guru. Yang tanggalnya masih dalam {KOREKSI_LANGSUNG_HARI} hari terakhir langsung diterapkan saat disetujui; yang lebih lama diteruskan ke Admin untuk persetujuan akhir.
+          </p>
+          <PengajuanList items={menungguTu} guruByKode={guruByKode} mode="tu" locked={locked}
+            onSetujui={(p) => prosesPengajuan(prosesCtx, p, "setujui")} onTolak={tolak} emptyText="Tidak ada pengajuan yang menunggu." />
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "#374151", margin: "20px 0 8px" }}>🗂️ Riwayat & Menunggu Admin</div>
+          <PengajuanList items={riwayatLayer} guruByKode={guruByKode} mode="lihat" emptyText="Belum ada riwayat pengajuan." />
+        </>
       ) : (
         <>
           {locked && (
@@ -5455,15 +5771,51 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, AC
               ⏳ Akun Anda belum dikonfirmasi Admin untuk semester ini — kehadiran bisa dilihat tapi belum bisa diisi/diubah.
             </div>
           )}
-          <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0, marginBottom: "12px" }}>⏱️ Isi <strong>jam kedatangan</strong> pada guru yang Hadir — menit keterlambatan dihitung otomatis. Jam I dihitung mulai 05.40, Jam II mulai 06.40; datang sebelum batas itu tercatat tepat waktu.</p>
+          {menungguTu.length > 0 && (
+            <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: "10px", padding: "9px 14px", marginBottom: "14px", fontSize: "12px", color: "#6d28d9" }}>
+              📨 Ada <strong>{menungguTu.length}</strong> pengajuan perubahan dari guru menunggu tindakan — buka tab <strong>Pengajuan</strong>.
+            </div>
+          )}
+          <PengingatIsiKehadiran key={pengingat ? `${pengingat.start}|${pengingat.end}` : "none"} pengingat={pengingat} guruByKode={guruByKode} locked={locked} onSimpan={simpanPengingat} />
+          <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", flexWrap: "wrap", marginBottom: "12px" }}>
+            <div>
+              <label style={labelA}>Tanggal</label>
+              <input type="date" value={iso} min={batasKoreksiAdmin(today)} max={today}
+                onChange={(e) => e.target.value && setIso(e.target.value > today ? today : e.target.value)} style={{ ...inputA, width: "auto" }} />
+            </div>
+            {!isToday && (
+              <button onClick={() => setIso(today)} className="btn-hover" style={{ padding: "7px 12px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: THEME.radius.sm, fontSize: "12px", cursor: "pointer" }}>↺ Kembali ke hari ini</button>
+            )}
+          </div>
+          {tier === "langsung" && !isToday && (
+            <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "9px 14px", marginBottom: "12px", fontSize: "12px", color: "#1e40af" }}>
+              📝 Pengisian susulan — masih dalam batas {KOREKSI_LANGSUNG_HARI} hari, perubahan langsung tersimpan.
+            </div>
+          )}
+          {tier === "admin" && (
+            <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: "10px", padding: "9px 14px", marginBottom: "12px", fontSize: "12px", color: "#6d28d9" }}>
+              🔒 Tanggal ini lebih dari {KOREKSI_LANGSUNG_HARI} hari lalu — setiap perubahan status akan diajukan ke Admin dan baru berlaku setelah disetujui.
+            </div>
+          )}
+          {tier === "terkunci" && (
+            <div style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "9px 14px", marginBottom: "12px", fontSize: "12px", color: "#4b5563" }}>
+              🔒 Bulan tanggal ini sudah ditutup — kehadiran hanya bisa dilihat.
+            </div>
+          )}
+          {tier === "langsung" && <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: 0, marginBottom: "12px" }}>⏱️ Isi <strong>jam kedatangan</strong> pada guru yang Hadir — menit keterlambatan dihitung otomatis. Jam I dihitung mulai 05.40, Jam II mulai 06.40; datang sebelum batas itu tercatat tepat waktu.</p>}
           {!hari ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
-              Hari ini Jumat — tidak ada jadwal pelajaran, tidak perlu mengisi kehadiran guru.
+              {isToday ? "Hari ini" : "Tanggal ini"} Jumat — tidak ada jadwal pelajaran, tidak perlu mengisi kehadiran guru.
+            </div>
+          ) : libur ? (
+            <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
+              🏖️ Hari libur{libur.ket ? ` — ${libur.ket}` : ""}. Tidak perlu mengisi kehadiran guru, dan tanggal ini tidak dihitung di rekap.
             </div>
           ) : rows.length === 0 ? (
             <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kelas {layer === "putra" ? "Putra" : "Putri"} di Susun Jadwal.</div>
           ) : (
-            <KehadiranSlotTable rows={rows} guruByKode={guruByKode} mapelByKode={mapelByKode} editable locked={locked} onSetStatus={setStatus} onPatchRecord={patchRecord} onKirimPeringatan={kirimPeringatan} />
+            <KehadiranSlotTable rows={rows} guruByKode={guruByKode} mapelByKode={mapelByKode} editable={tier !== "terkunci"} locked={locked} onSetStatus={setStatus}
+              onPatchRecord={tier === "langsung" ? patchRecord : null} onKirimPeringatan={isToday ? kirimPeringatan : null} />
           )}
         </>
       )}
@@ -5471,24 +5823,253 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, AC
   );
 }
 
-// Every recorded attendance mark, aggregated by guru kode (using the g captured inside
-// each record, not the live schedule — so a later reassignment never rewrites history),
-// restricted to [start, end] inclusive (ISO date strings) and optionally one layer.
-function aggregateKehadiran(kehadiranGuru, start, end, layerFilter = null) {
+// TU's end-of-week/month "isi yang kosong" prompt (see periodePengingat) — "Hadir Semua"
+// in one click, or "Pilih yang tidak hadir" to mark only the S/I/A exceptions while the
+// rest is saved as Hadir. Closing it (✕) only hides it until the page is reopened; the
+// slots meanwhile still count as Hadir otomatis in every recap.
+function PengingatIsiKehadiran({ pengingat, guruByKode, locked, onSimpan }) {
+  const [tutup, setTutup] = useState(false);
+  const [pilihMode, setPilihMode] = useState(false);
+  const [pilihan, setPilihan] = useState({});
+  const [ket, setKet] = useState("");
+  if (!pengingat || tutup) return null;
+  const { slots } = pengingat;
+  const today = todayISO();
+  const adaKeAdmin = slots.some((s) => (pilihan[slotKey(s.dateISO, s.layer, s.jam.kode, s.kelas.kode)] || "H") !== "H" && koreksiTier(s.dateISO, today) === "admin");
+  const simpan = (pil) => {
+    if (onSimpan(slots, pil, ket)) { setPilihMode(false); setPilihan({}); setKet(""); }
+  };
+  const hadirSemua = () => {
+    if (!window.confirm(`Tandai ${slots.length} slot yang belum diisi sebagai Hadir?`)) return;
+    simpan({});
+  };
+  const byDate = [];
+  slots.forEach((s) => {
+    const last = byDate[byDate.length - 1];
+    if (last && last.dateISO === s.dateISO) last.items.push(s);
+    else byDate.push({ dateISO: s.dateISO, items: [s] });
+  });
+  const btn = (bg, fg) => ({ padding: "7px 14px", background: bg, color: fg, border: "none", borderRadius: THEME.radius.sm, fontSize: "12px", fontWeight: 600, cursor: locked ? "not-allowed" : "pointer" });
+  return (
+    <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: THEME.radius.md, padding: "12px 14px", marginBottom: "14px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
+        <div>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "#92400e" }}>⏰ Ada {slots.length} slot belum diisi {pengingat.label}</div>
+          <div style={{ fontSize: "11.5px", color: "#92400e", opacity: 0.85, marginTop: "2px" }}>
+            {formatTanggalIndo(pengingat.start)} — {formatTanggalIndo(pengingat.end)}. Jika dibiarkan, semua dihitung Hadir (otomatis). Tandai yang sebenarnya tidak hadir agar rekap sesuai kenyataan.
+          </div>
+        </div>
+        <button onClick={() => setTutup(true)} title="Tutup pengingat" style={{ background: "none", border: "none", color: "#92400e", fontSize: "14px", cursor: "pointer", flexShrink: 0 }}>✕</button>
+      </div>
+      {!pilihMode ? (
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
+          <button disabled={locked} onClick={hadirSemua} className="btn-hover" style={btn(THEME.green[700], "white")}>✅ Hadir Semua</button>
+          <button disabled={locked} onClick={() => setPilihMode(true)} className="btn-hover" style={btn("white", "#92400e")}>✏️ Pilih yang tidak hadir</button>
+        </div>
+      ) : (
+        <div style={{ marginTop: "10px" }}>
+          <div style={{ background: "white", border: "1px solid #fde68a", borderRadius: THEME.radius.sm, maxHeight: "360px", overflowY: "auto" }}>
+            {byDate.map((grp) => (
+              <div key={grp.dateISO}>
+                <div style={{ padding: "6px 10px", background: "#fefce8", fontSize: "11px", fontWeight: 600, color: "#713f12", position: "sticky", top: 0 }}>
+                  {HARI_LABEL_ID[hariForISO(grp.dateISO)]}, {formatTanggalIndo(grp.dateISO)}
+                  {koreksiTier(grp.dateISO, today) === "admin" && <span style={{ fontWeight: 400, color: "#6d28d9" }}> · selain Hadir perlu persetujuan Admin</span>}
+                </div>
+                {grp.items.map((s) => {
+                  const k = slotKey(s.dateISO, s.layer, s.jam.kode, s.kelas.kode);
+                  const cur = pilihan[k] || "H";
+                  return (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "6px 10px", borderBottom: "1px solid #f3f4f6", fontSize: "11.5px" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <span style={{ fontWeight: 600, color: "#047857" }}>Jam {s.jam.kode}</span> · {s.kelas.label} · {guruDisplayName(guruByKode, s.cell.g)}
+                      </div>
+                      <div style={{ display: "flex", gap: "3px", flexShrink: 0 }}>
+                        {KEHADIRAN_STATUS.map((st) => (
+                          <button key={st.kode} title={st.label} onClick={() => setPilihan((p) => ({ ...p, [k]: st.kode }))}
+                            style={{ padding: "3px 8px", fontSize: "10px", fontWeight: 600, border: "none", borderRadius: "5px", cursor: "pointer", background: cur === st.kode ? st.bg : "#f3f4f6", color: cur === st.kode ? st.fg : "#9ca3af" }}>
+                            {st.kode}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <input type="text" value={ket} onChange={(e) => setKet(e.target.value)}
+            placeholder={adaKeAdmin ? "Alasan koreksi (wajib — ada slot yang perlu persetujuan Admin)" : "Keterangan untuk yang Izin (opsional)"}
+            style={{ ...inputA, marginTop: "8px", fontSize: "12px", borderColor: adaKeAdmin && !ket.trim() ? "#f59e0b" : "#d1d5db" }} />
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
+            <button disabled={locked} onClick={() => simpan(pilihan)} className="btn-hover" style={btn(THEME.green[700], "white")}>💾 Simpan (sisanya Hadir)</button>
+            <button onClick={() => { setPilihMode(false); setPilihan({}); }} style={btn("#f3f4f6", "#4b5563")}>Batal</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One list for every pengajuan screen — guru's "Pengajuan Saya", TU's Pengajuan tab and
+// Admin's Persetujuan Koreksi. `mode` decides who may act: "tu" shows Setujui/Tolak on
+// tahap "tu" items, "admin" on tahap "admin" items; "guru"/"lihat" are read-only. A
+// pengajuan whose month has since closed (koreksiTier "terkunci") can only be rejected.
+function PengajuanList({ items, guruByKode, mode, locked = false, onSetujui, onTolak, emptyText }) {
+  const today = todayISO();
+  if (!items || items.length === 0) {
+    return <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "20px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>{emptyText}</div>;
+  }
+  const badge = (kode) => {
+    const s = KEHADIRAN_REKAP_STATUS.find((x) => x.kode === kode);
+    return <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: 600, background: s?.bg || "#f3f4f6", color: s?.fg || "#6b7280" }}>{s?.label || "Belum diisi"}</span>;
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      {items.map((p) => {
+        const bisaProses = p.status === "menunggu" && ((mode === "tu" && p.tahap === "tu") || (mode === "admin" && p.tahap === "admin"));
+        const tier = koreksiTier(p.dateISO, today);
+        const kedaluwarsa = tier === "terkunci";
+        const chip = p.status === "disetujui" ? { t: "✅ Disetujui", bg: "#d1fae5", fg: "#065f46" }
+          : p.status === "ditolak" ? { t: "❌ Ditolak", bg: "#fee2e2", fg: "#991b1b" }
+          : { t: `⏳ Menunggu ${p.tahap === "admin" ? "Admin" : "TU"}`, bg: "#ede9fe", fg: "#6d28d9" };
+        const hari = hariForISO(p.dateISO);
+        return (
+          <div key={p.id} style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: THEME.radius.md, padding: "10px 12px", boxShadow: THEME.shadow.card }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#111827" }}>{guruDisplayName(guruByKode, p.g)} · {p.kelasLabel} Jam {p.jamKode}</div>
+              <span style={{ padding: "2px 9px", borderRadius: "10px", fontSize: "10.5px", fontWeight: 600, background: chip.bg, color: chip.fg }}>{chip.t}</span>
+            </div>
+            <div style={{ fontSize: "11.5px", color: "#6b7280", marginTop: "3px" }}>
+              {hari ? `${HARI_LABEL_ID[hari]}, ` : ""}{formatTanggalIndo(p.dateISO)} · {p.layer === "putra" ? "Putra" : "Putri"}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "6px", flexWrap: "wrap" }}>
+              {badge(p.statusLama)} <span style={{ color: "#9ca3af" }}>→</span> {badge(p.statusBaru)}
+            </div>
+            {p.alasan && <div style={{ fontSize: "11.5px", color: "#374151", marginTop: "6px" }}>Alasan: {p.alasan}</div>}
+            <div style={{ fontSize: "10.5px", color: "#9ca3af", marginTop: "4px" }}>
+              Diajukan {p.dariRole === "guru" ? "guru" : "TU"} ({p.dari}) · {new Date(p.dibuatAt).toLocaleString("id-ID")}
+              {p.disetujuiTuOleh ? ` · disetujui TU (${p.disetujuiTuOleh})` : ""}
+              {p.diprosesOleh ? ` · diproses ${p.diprosesOleh}` : ""}
+            </div>
+            {p.status === "ditolak" && p.catatanTolak && <div style={{ fontSize: "11.5px", color: "#991b1b", marginTop: "4px" }}>Catatan: {p.catatanTolak}</div>}
+            {bisaProses && (
+              <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", marginTop: "8px" }}>
+                <button disabled={locked || kedaluwarsa} onClick={() => onSetujui(p)} className="btn-hover"
+                  style={{ padding: "6px 12px", background: locked || kedaluwarsa ? "#e5e7eb" : THEME.green[700], color: locked || kedaluwarsa ? "#9ca3af" : "white", border: "none", borderRadius: THEME.radius.sm, fontSize: "11.5px", fontWeight: 600, cursor: locked || kedaluwarsa ? "not-allowed" : "pointer" }}>
+                  ✅ Setujui{mode === "tu" && tier === "admin" ? " & teruskan ke Admin" : ""}
+                </button>
+                <button disabled={locked} onClick={() => onTolak(p)} className="btn-hover"
+                  style={{ padding: "6px 12px", background: "#fee2e2", color: "#991b1b", border: "none", borderRadius: THEME.radius.sm, fontSize: "11.5px", fontWeight: 600, cursor: locked ? "not-allowed" : "pointer" }}>
+                  ❌ Tolak
+                </button>
+                {kedaluwarsa && <span style={{ fontSize: "10.5px", color: "#9ca3af" }}>🔒 Bulan tersebut sudah ditutup — hanya bisa ditolak.</span>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Guru's per-slot "Ajukan Perubahan" action in Rekap Saya → Per Hari. Self-contained
+// (owns its own open/closed form state) like StatusKehadiranRow, so the table doesn't
+// need one entry of parent state per slot.
+function AjukanPerubahanCell({ row, dateISO, locked, onAjukan }) {
+  const [open, setOpen] = useState(false);
+  const [statusBaru, setStatusBaru] = useState("");
+  const [alasan, setAlasan] = useState("");
+  const tier = koreksiTier(dateISO);
+  if (row.pending) return <span style={{ fontSize: "10.5px", color: "#6d28d9" }}>⏳ Sudah diajukan</span>;
+  if (tier === "mendatang") return <span style={{ fontSize: "10.5px", color: "#d1d5db" }}>-</span>;
+  if (tier === "terkunci") return <span style={{ fontSize: "10.5px", color: "#9ca3af" }}>🔒 Sudah ditutup</span>;
+  const current = row.rec?.status || (row.otomatis ? "O" : "");
+  if (!open) {
+    return (
+      <button disabled={locked} onClick={() => setOpen(true)} className="btn-hover"
+        style={{ padding: "4px 9px", fontSize: "10.5px", fontWeight: 500, border: "1px solid #d1d5db", borderRadius: THEME.radius.sm, background: "white", color: "#374151", cursor: locked ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+        ✏️ Ajukan Perubahan
+      </button>
+    );
+  }
+  const siap = statusBaru && alasan.trim();
+  const kirim = () => {
+    if (!siap) return;
+    onAjukan(row, dateISO, statusBaru, alasan.trim());
+    setOpen(false);
+    setStatusBaru("");
+    setAlasan("");
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+      <div style={{ display: "flex", gap: "3px" }}>
+        {KEHADIRAN_STATUS.filter((s) => s.kode !== current).map((s) => (
+          <button key={s.kode} title={s.label} onClick={() => setStatusBaru(s.kode)}
+            style={{ padding: "3px 8px", fontSize: "10px", fontWeight: 600, border: "none", borderRadius: "5px", cursor: "pointer", background: statusBaru === s.kode ? s.bg : "#f3f4f6", color: statusBaru === s.kode ? s.fg : "#9ca3af" }}>
+            {s.kode}
+          </button>
+        ))}
+      </div>
+      <input type="text" value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="Alasan (wajib)..."
+        style={{ padding: "4px 7px", border: "1px solid #d1d5db", borderRadius: "5px", fontSize: "11px", boxSizing: "border-box", width: "100%" }} />
+      <div style={{ display: "flex", gap: "4px" }}>
+        <button disabled={!siap} onClick={kirim}
+          style={{ padding: "4px 10px", fontSize: "10.5px", fontWeight: 600, border: "none", borderRadius: "5px", background: siap ? THEME.green[700] : "#e5e7eb", color: siap ? "white" : "#9ca3af", cursor: siap ? "pointer" : "not-allowed" }}>Kirim</button>
+        <button onClick={() => setOpen(false)} style={{ padding: "4px 10px", fontSize: "10.5px", border: "none", borderRadius: "5px", background: "#f3f4f6", color: "#4b5563", cursor: "pointer" }}>Batal</button>
+      </div>
+    </div>
+  );
+}
+
+// Per-guru H/O/S/I/A counts (+ total menit terlambat) for [start, end] inclusive (ISO
+// date strings), optionally one layer. Recorded marks are aggregated by the guru kode
+// captured inside each record (not the live schedule — so a later reassignment never
+// rewrites history). On top of that, every past school-day slot TU never filled counts
+// as "O" (Hadir otomatis) for the guru the jadwal assigns it to — but only from that
+// layer's first isian onward, never today/future, and never on a Hari Libur (records on
+// a libur day are left out entirely too).
+function emptyKehadiranCounts() {
+  return { H: 0, O: 0, S: 0, I: 0, A: 0, telat: 0 };
+}
+function totalKehadiran(c) {
+  return c.H + c.O + c.S + c.I + c.A;
+}
+function pctHadir(c) {
+  const total = totalKehadiran(c);
+  return total > 0 ? Math.round(((c.H + c.O) / total) * 100) : 0;
+}
+function aggregateKehadiran(JADWAL, CL, kehadiranGuru, hariLibur, start, end, layerFilter = null) {
   const counts = {};
+  const bump = (g, kode) => {
+    counts[g] = counts[g] || emptyKehadiranCounts();
+    counts[g][kode] = (counts[g][kode] || 0) + 1;
+  };
   Object.entries(kehadiranGuru || {}).forEach(([dateISO, day]) => {
     if (dateISO < start || dateISO > end) return;
     ["putra", "putri"].forEach((layer) => {
       if (layerFilter && layer !== layerFilter) return;
+      if (liburUntuk(hariLibur, dateISO, layer)) return;
       Object.values(day?.[layer] || {}).forEach((jamData) => {
         Object.values(jamData || {}).forEach((rec) => {
           if (!rec?.g || !rec?.status) return;
-          counts[rec.g] = counts[rec.g] || { H: 0, S: 0, I: 0, A: 0, telat: 0 };
-          counts[rec.g][rec.status] = (counts[rec.g][rec.status] || 0) + 1;
+          bump(rec.g, rec.status);
           if (rec.status === "H" && rec.telat) counts[rec.g].telat += Number(rec.telat) || 0;
         });
       });
     });
+  });
+  const today = todayISO();
+  const firstIsian = firstIsianByLayer(kehadiranGuru);
+  const yesterday = addDaysISO(today, -1);
+  const last = end < yesterday ? end : yesterday;
+  (layerFilter ? [layerFilter] : ["putra", "putri"]).forEach((layer) => {
+    if (!firstIsian[layer]) return;
+    for (let d = start > firstIsian[layer] ? start : firstIsian[layer]; d <= last; d = addDaysISO(d, 1)) {
+      if (!hariForISO(d) || liburUntuk(hariLibur, d, layer)) continue;
+      buildKehadiranDayRows(JADWAL, CL, d, kehadiranGuru, layer, null).rows.forEach((r) => {
+        if (!r.rec?.status) bump(r.cell.g, "O");
+      });
+    }
   });
   return counts;
 }
@@ -5497,8 +6078,9 @@ function aggregateKehadiran(kehadiranGuru, start, end, layerFilter = null) {
 // scopeGuruKode set) — same date range already picked via Per Hari/Minggu/Bulan.
 // `kind` is "A" (every Tanpa Keterangan record) or "telat" (every Hadir record with
 // telat > 0); aggregateKehadiran only returns the summed counts, not which dates they
-// came from, so this walks kehadiranGuru itself the same way aggregateKehadiran does.
-function buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, guruKode, kind) {
+// came from, so this walks kehadiranGuru itself the same way aggregateKehadiran does
+// (including skipping Hari Libur, so the list always matches the counted totals).
+function buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, guruKode, kind, hariLibur = {}) {
   const putraKelas = jadwalPutraKelas(JADWAL);
   const putriKelas = jadwalPutriKelas(CL || {}, JADWAL);
   const kelasLabelOf = (layer, kode) => (layer === "putra" ? putraKelas : putriKelas).find((k) => k.kode === kode)?.label || kode;
@@ -5506,6 +6088,7 @@ function buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, guruKod
   Object.entries(kehadiranGuru || {}).forEach(([dateISO, day]) => {
     if (dateISO < start || dateISO > end) return;
     ["putra", "putri"].forEach((layer) => {
+      if (liburUntuk(hariLibur, dateISO, layer)) return;
       Object.entries(day?.[layer] || {}).forEach(([jamKode, jamData]) => {
         Object.entries(jamData || {}).forEach(([kelasKode, rec]) => {
           if (!rec?.g || rec.g !== guruKode) return;
@@ -5522,32 +6105,31 @@ function buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, guruKod
 }
 // Whole-semester recap regardless of date (kehadiranGuru itself already only ever
 // holds the current semester's data — see the reset-cycle note in AdminDashboard).
-function buildKehadiranRecap(kehadiranGuru) {
-  return aggregateKehadiran(kehadiranGuru, "0000-01-01", "9999-12-31", null);
-}
-function buildKehadiranGuruExcel(JADWAL, kehadiranGuru, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM) {
-  const counts = buildKehadiranRecap(kehadiranGuru);
+function buildKehadiranGuruExcel(JADWAL, CL, kehadiranGuru, hariLibur, LEMBAGA = DEFAULT_LEMBAGA, SEM = DEFAULT_SEM) {
+  const counts = aggregateKehadiran(JADWAL, CL, kehadiranGuru, hariLibur, "0000-01-01", "9999-12-31", null);
   const rows = (JADWAL.guru || []).filter((g) => counts[g.kode]).map((g) => {
-    const c = counts[g.kode] || { H: 0, S: 0, I: 0, A: 0, telat: 0 };
-    return [g.kode, g.nama, c.H, c.S, c.I, c.A, c.H + c.S + c.I + c.A, c.telat];
+    const c = counts[g.kode] || emptyKehadiranCounts();
+    return [g.kode, g.nama, c.H, c.O, c.S, c.I, c.A, totalKehadiran(c), pctHadir(c), c.telat];
   });
   const wb = XLSX.utils.book_new();
-  const NC = 8;
+  const NC = 10;
   const aoa = [
     [`${LEMBAGA.namaLembaga} ${LEMBAGA.namaPondok}`, ...Array(NC - 1).fill("")],
     [`REKAPITULASI KEHADIRAN GURU — Semester ${semLabel(SEM)}`, ...Array(NC - 1).fill("")],
     Array(NC).fill(""),
-    ["Kode", "Nama Guru", "Hadir", "Sakit", "Izin", "Tanpa Keterangan", "Total Tercatat", "Menit Terlambat"],
+    ["Kode", "Nama Guru", "Hadir", "Hadir (otomatis)", "Sakit", "Izin", "Tanpa Keterangan", "Total Slot", "% Hadir", "Menit Terlambat"],
     ...rows,
+    Array(NC).fill(""),
+    ["Hadir (otomatis) = slot hari sekolah yang tidak diisi TU dan bukan hari libur, dihitung hadir.", ...Array(NC - 1).fill("")],
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 14 }, { wch: 14 }];
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: NC - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: NC - 1 } }];
+  ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 8 }, { wch: 15 }, { wch: 8 }, { wch: 8 }, { wch: 16 }, { wch: 10 }, { wch: 9 }, { wch: 15 }];
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: NC - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: NC - 1 } }, { s: { r: aoa.length - 1, c: 0 }, e: { r: aoa.length - 1, c: NC - 1 } }];
   XLSX.utils.book_append_sheet(wb, ws, "Kehadiran Guru");
   return wb;
 }
 
-// One 100%-stacked horizontal bar for one guru's (or one aggregated group's) H/S/I/A
+// One 100%-stacked horizontal bar for one guru's (or one aggregated group's) H/O/S/I/A
 // distribution — replaces the old 4-separate-mini-bars layout (each status its own
 // full-width row) with a single compact composition bar, per explicit user request
 // after reviewing an Artifact preview. Segments use KEHADIRAN_CHART_HUE (validated
@@ -5558,8 +6140,8 @@ function buildKehadiranGuruExcel(JADWAL, kehadiranGuru, LEMBAGA = DEFAULT_LEMBAG
 // legend once and a headline "% hadir" figure beside/below the bar, not repeated
 // per row like the old per-status labels were.
 function KehadiranBarChart({ counts, height = "16px" }) {
-  const total = counts.H + counts.S + counts.I + counts.A;
-  const segments = KEHADIRAN_STATUS.filter((s) => (counts[s.kode] || 0) > 0);
+  const total = totalKehadiran(counts);
+  const segments = KEHADIRAN_REKAP_STATUS.filter((s) => (counts[s.kode] || 0) > 0);
   return (
     <div style={{ display: "flex", height, borderRadius: THEME.radius.pill, overflow: "hidden", background: "#eef0ec" }}>
       {total === 0 && <div style={{ width: "100%" }} />}
@@ -5581,7 +6163,7 @@ function KehadiranBarChart({ counts, height = "16px" }) {
 function KehadiranLegend() {
   return (
     <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", padding: "10px 16px", borderBottom: "1px solid #e5e7eb", fontSize: "11.5px", color: "#52584f" }}>
-      {KEHADIRAN_STATUS.map((s) => (
+      {KEHADIRAN_REKAP_STATUS.map((s) => (
         <span key={s.kode} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span style={{ width: "10px", height: "10px", borderRadius: "3px", background: KEHADIRAN_CHART_HUE[s.kode], flexShrink: 0 }} />
           {s.label}
@@ -5595,9 +6177,11 @@ function KehadiranLegend() {
 // set, scopeGuruKode null — every guru in their layer), Admin Dashboard/tab (neither
 // scoped — every guru, both layers), and a guru's own "📊 Rekap Saya" tab in Jadwal
 // Pelajaran (scopeGuruKode set — just that one guru, wherever they teach). "Per Hari"
-// shows the raw entries for that single date; "Per Minggu"/"Per Bulan" aggregate into
-// the H/S/I/A percentage bar chart plus total menit terlambat.
-function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, scopeGuruKode = null }) {
+// shows the raw entries for that single date (unfilled past slots as Hadir otomatis);
+// "Per Minggu"/"Per Bulan" aggregate into the H/O/S/I/A percentage bar chart plus total
+// menit terlambat. `onAjukanPerubahan` (guru only) adds the per-slot "Ajukan Perubahan"
+// column to the Per Hari table.
+function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, hariLibur = {}, scopeLayer = null, scopeGuruKode = null, pengajuanKehadiran = null, onAjukanPerubahan = null, locked = false }) {
   const [mode, setMode] = useState("minggu");
   const [selDate, setSelDate] = useState(todayISO());
   const [selMonth, setSelMonth] = useState(todayISO().slice(0, 7));
@@ -5623,20 +6207,38 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
     return { start: r.start, end: r.end, label: `${BULAN_ID[m - 1]} ${y}` };
   }, [mode, selDate, selMonth]);
 
-  const counts = useMemo(() => aggregateKehadiran(kehadiranGuru, start, end, scopeLayer), [kehadiranGuru, start, end, scopeLayer]);
-  const scopedCounts = scopeGuruKode ? { [scopeGuruKode]: counts[scopeGuruKode] || { H: 0, S: 0, I: 0, A: 0, telat: 0 } } : counts;
+  const counts = useMemo(() => aggregateKehadiran(JADWAL, CL, kehadiranGuru, hariLibur, start, end, scopeLayer), [JADWAL, CL, kehadiranGuru, hariLibur, start, end, scopeLayer]);
+  const scopedCounts = scopeGuruKode ? { [scopeGuruKode]: counts[scopeGuruKode] || emptyKehadiranCounts() } : counts;
   const rows = Object.keys(scopedCounts)
     .map((kode) => ({ kode, nama: guruDisplayName(guruByKode, kode), c: scopedCounts[kode] }))
-    .sort((a, b) => (b.c.H + b.c.S + b.c.I + b.c.A) - (a.c.H + a.c.S + a.c.I + a.c.A));
-  const totalRecords = rows.reduce((s, r) => s + r.c.H + r.c.S + r.c.I + r.c.A, 0);
-  const dayView = mode === "hari" ? buildKehadiranDayRows(JADWAL, CL, selDate, kehadiranGuru, scopeLayer, scopeGuruKode) : null;
+    .sort((a, b) => totalKehadiran(b.c) - totalKehadiran(a.c));
+  const totalRecords = rows.reduce((s, r) => s + totalKehadiran(r.c), 0);
+  const firstIsian = useMemo(() => firstIsianByLayer(kehadiranGuru), [kehadiranGuru]);
+  const pendingBySlot = useMemo(() => pengajuanMenungguBySlot(pengajuanKehadiran), [pengajuanKehadiran]);
+  const dayView = useMemo(() => {
+    if (mode !== "hari") return null;
+    const today = todayISO();
+    const v = buildKehadiranDayRows(JADWAL, CL, selDate, kehadiranGuru, scopeLayer, scopeGuruKode);
+    const libur = ["putra", "putri"].map((l) => (!scopeLayer || l === scopeLayer) && liburUntuk(hariLibur, selDate, l)).find(Boolean) || null;
+    const dayRows = v.rows
+      .filter((r) => !liburUntuk(hariLibur, selDate, r.layer))
+      .map((r) => ({
+        ...r,
+        otomatis: slotOtomatis(r.rec, selDate, r.layer, firstIsian, hariLibur, today),
+        pending: pendingBySlot[slotKey(selDate, r.layer, r.jam.kode, r.kelas.kode)] || null,
+      }));
+    return { hari: v.hari, libur, rows: dayRows };
+  }, [mode, JADWAL, CL, selDate, kehadiranGuru, scopeLayer, scopeGuruKode, hariLibur, firstIsian, pendingBySlot]);
   const detailRows = useMemo(
-    () => (scopeGuruKode && detailKind ? buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, scopeGuruKode, detailKind) : []),
-    [scopeGuruKode, detailKind, kehadiranGuru, JADWAL, CL, start, end]
+    () => (scopeGuruKode && detailKind ? buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, scopeGuruKode, detailKind, hariLibur) : []),
+    [scopeGuruKode, detailKind, kehadiranGuru, JADWAL, CL, start, end, hariLibur]
   );
   const expandedRowDetail = useMemo(
-    () => (expandedRow ? buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, expandedRow.kode, expandedRow.kind) : []),
-    [expandedRow, kehadiranGuru, JADWAL, CL, start, end]
+    () => (expandedRow ? buildKehadiranGuruDetail(kehadiranGuru, JADWAL, CL, start, end, expandedRow.kode, expandedRow.kind, hariLibur) : []),
+    [expandedRow, kehadiranGuru, JADWAL, CL, start, end, hariLibur]
+  );
+  const emptyBox = (text) => (
+    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>{text}</div>
   );
 
   return (
@@ -5667,23 +6269,30 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
 
       {mode === "hari" ? (
         !dayView.hari ? (
-          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Jumat — tidak ada jadwal pelajaran tanggal ini.</div>
+          emptyBox("Jumat — tidak ada jadwal pelajaran tanggal ini.")
         ) : dayView.rows.length === 0 ? (
-          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kehadiran tercatat tanggal ini.</div>
+          emptyBox(dayView.libur ? `🏖️ Hari libur${dayView.libur.ket ? ` — ${dayView.libur.ket}` : ""}. Tanggal ini tidak dihitung di rekap.` : "Belum ada kehadiran tercatat tanggal ini.")
         ) : (
-          <KehadiranSlotTable rows={dayView.rows} guruByKode={guruByKode} mapelByKode={mapelByKode} editable={false} showLayer={!scopeLayer} />
+          <>
+            {dayView.libur && (
+              <div style={{ fontSize: "11.5px", color: "#6b7280", marginBottom: "8px" }}>🏖️ {dayView.libur.layer === "putra" ? "Putra" : "Putri"} libur tanggal ini{dayView.libur.ket ? ` — ${dayView.libur.ket}` : ""}.</div>
+            )}
+            <KehadiranSlotTable rows={dayView.rows} guruByKode={guruByKode} mapelByKode={mapelByKode} editable={false} showLayer={!scopeLayer}
+              renderAksi={onAjukanPerubahan ? (r) => <AjukanPerubahanCell row={r} dateISO={selDate} locked={locked} onAjukan={onAjukanPerubahan} /> : null} />
+          </>
         )
       ) : totalRecords === 0 ? (
-        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada kehadiran tercatat pada periode ini.</div>
+        emptyBox("Belum ada kehadiran tercatat pada periode ini.")
       ) : scopeGuruKode ? (
         <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", boxShadow: THEME.shadow.card, overflow: "hidden" }} className="card-hover">
           <KehadiranLegend />
           <div style={{ padding: "16px" }}>
+            <div style={{ fontSize: "12.5px", color: "#52584f", marginBottom: "8px" }}>Persentase hadir: <strong style={{ color: "#065f46", fontSize: "15px" }}>{pctHadir(rows[0].c)}%</strong></div>
             <KehadiranBarChart counts={rows[0].c} height="22px" />
             <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "2px" }}>
-              {KEHADIRAN_STATUS.map((s) => {
+              {KEHADIRAN_REKAP_STATUS.map((s) => {
                 const n = rows[0].c[s.kode] || 0;
-                const total = rows[0].c.H + rows[0].c.S + rows[0].c.I + rows[0].c.A;
+                const total = totalKehadiran(rows[0].c);
                 const pct = total > 0 ? Math.round((n / total) * 100) : 0;
                 const clickable = (s.kode === "A" || s.kode === "I") && n > 0;
                 return (
@@ -5754,8 +6363,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
             </thead>
             <tbody>
               {rows.map((r) => {
-                const total = r.c.H + r.c.S + r.c.I + r.c.A;
-                const pctH = total > 0 ? Math.round((r.c.H / total) * 100) : 0;
+                const total = totalKehadiran(r.c);
                 const isExpanded = (kind) => expandedRow?.kode === r.kode && expandedRow?.kind === kind;
                 const toggle = (kind) => setExpandedRow((cur) => (cur?.kode === r.kode && cur?.kind === kind ? null : { kode: r.kode, kind }));
                 return (
@@ -5765,7 +6373,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
                       <td style={{ padding: "10px 12px", minWidth: "180px", verticalAlign: "middle" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                           <div style={{ flex: 1, minWidth: "80px" }}><KehadiranBarChart counts={r.c} /></div>
-                          <span style={{ fontSize: "11.5px", color: "#52584f", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><strong style={{ color: "#065f46" }}>{pctH}%</strong> · {total} tercatat</span>
+                          <span style={{ fontSize: "11.5px", color: "#52584f", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><strong style={{ color: "#065f46" }}>{pctHadir(r.c)}%</strong> · {total} slot{r.c.O > 0 ? ` (${r.c.O} otomatis)` : ""}</span>
                         </div>
                       </td>
                       <td style={{ padding: "10px 12px", verticalAlign: "middle", whiteSpace: "nowrap" }}>
@@ -5829,22 +6437,149 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, scopeLayer = null, sco
           </div>
         </div>
       )}
+      {mode !== "hari" && totalRecords > 0 && (
+        <p style={{ fontSize: "10.5px", color: "#9ca3af", margin: "8px 2px 0" }}>
+          Hadir (otomatis) = slot hari sekolah yang sudah lewat tapi tidak diisi TU (dan bukan hari libur) — dihitung hadir.
+        </p>
+      )}
     </div>
   );
 }
 
-function AdminKehadiranGuru({ JADWAL, CL, kehadiranGuru, LEMBAGA, SEM }) {
+function AdminKehadiranGuru({ JADWAL, CL, kehadiranGuru, hariLibur, LEMBAGA, SEM }) {
   const doExport = () => {
-    const wb = buildKehadiranGuruExcel(JADWAL, kehadiranGuru, LEMBAGA, SEM);
+    const wb = buildKehadiranGuruExcel(JADWAL, CL, kehadiranGuru, hariLibur, LEMBAGA, SEM);
     XLSX.writeFile(wb, `Kehadiran_Guru_${semLabel(SEM).replace(" ", "_").replace("/", "-")}.xlsx`);
   };
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", gap: "8px", flexWrap: "wrap" }}>
-        <p style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}>Rekap kehadiran guru, diisi Tata Usaha Putra/Putri tiap hari lewat menu Jadwal Pelajaran → Kehadiran Guru mereka sendiri. Direset bersamaan dengan reset semester. Export Excel selalu mengunduh rekap satu semester penuh, terlepas dari filter tampilan di bawah.</p>
+        <p style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}>Rekap kehadiran guru, diisi Tata Usaha Putra/Putri tiap hari lewat menu Kehadiran Guru mereka sendiri. Slot yang tidak diisi dihitung Hadir (otomatis) kecuali tanggalnya ditandai di menu Hari Libur. Direset bersamaan dengan reset semester. Export Excel selalu mengunduh rekap satu semester penuh, terlepas dari filter tampilan di bawah.</p>
         <button onClick={doExport} style={{ padding: "8px 16px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>📥 Export Excel</button>
       </div>
-      <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} />
+      <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} hariLibur={hariLibur} />
+    </div>
+  );
+}
+
+const LIBUR_LAYER_LABEL = { semua: "Putra & Putri", putra: "Putra", putri: "Putri" };
+
+// Admin marks school days that are actually libur (libur nasional, ujian, liburan
+// pondok) — without this, Hadir otomatis would count every unfilled slot on such a day
+// as attended. A range is stored as one entry per date so every lookup stays a plain
+// key read; the list re-groups consecutive same-keterangan dates back into ranges.
+function AdminHariLibur({ hariLibur, setHariLibur }) {
+  const today = todayISO();
+  const [form, setForm] = useState({ mulai: today, selesai: "", ket: "", layer: "semua" });
+  const tambah = () => {
+    if (!form.mulai) return;
+    if (!form.ket.trim()) { alert("Keterangan libur wajib diisi."); return; }
+    const selesai = form.selesai && form.selesai >= form.mulai ? form.selesai : form.mulai;
+    const dates = [];
+    for (let d = form.mulai; d <= selesai; d = addDaysISO(d, 1)) dates.push(d);
+    if (dates.length > 120) { alert("Rentang terlalu panjang (maksimal 120 hari)."); return; }
+    setHariLibur((prev) => {
+      const next = { ...(prev || {}) };
+      dates.forEach((d) => { next[d] = { ket: form.ket.trim(), layer: form.layer }; });
+      return next;
+    });
+    setForm((f) => ({ ...f, selesai: "", ket: "" }));
+  };
+  const hapus = (grp) => {
+    if (!window.confirm(`Hapus hari libur "${grp.ket}" (${grp.dates.length} hari)? Slot yang kosong pada tanggal tersebut akan kembali dihitung Hadir (otomatis).`)) return;
+    setHariLibur((prev) => {
+      const next = { ...(prev || {}) };
+      grp.dates.forEach((d) => { delete next[d]; });
+      return next;
+    });
+  };
+  const groups = useMemo(() => {
+    const out = [];
+    Object.keys(hariLibur || {}).sort().forEach((d) => {
+      const e = hariLibur[d];
+      const last = out[out.length - 1];
+      if (last && last.ket === e.ket && last.layer === e.layer && addDaysISO(last.dates[last.dates.length - 1], 1) === d) last.dates.push(d);
+      else out.push({ ket: e.ket, layer: e.layer, dates: [d] });
+    });
+    return out.reverse();
+  }, [hariLibur]);
+  return (
+    <div>
+      <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>
+        Tandai tanggal libur (libur nasional, ujian, liburan pondok, dll) selain Jumat. Pada tanggal libur, TU tidak perlu mengisi kehadiran dan tanggal tersebut tidak dihitung di rekap — termasuk data yang terlanjur diisi.
+      </p>
+      <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", padding: "14px", marginBottom: "16px", boxShadow: THEME.shadow.card }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px" }}>
+          <div>
+            <label style={labelA}>Tanggal mulai</label>
+            <input type="date" value={form.mulai} onChange={(e) => setForm((f) => ({ ...f, mulai: e.target.value }))} style={inputA} />
+          </div>
+          <div>
+            <label style={labelA}>Sampai (opsional)</label>
+            <input type="date" value={form.selesai} min={form.mulai} onChange={(e) => setForm((f) => ({ ...f, selesai: e.target.value }))} style={inputA} />
+          </div>
+          <div>
+            <label style={labelA}>Berlaku untuk</label>
+            <select value={form.layer} onChange={(e) => setForm((f) => ({ ...f, layer: e.target.value }))} style={inputA}>
+              {Object.entries(LIBUR_LAYER_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={labelA}>Keterangan</label>
+            <input type="text" value={form.ket} placeholder="mis. Libur Maulid Nabi" onChange={(e) => setForm((f) => ({ ...f, ket: e.target.value }))} style={inputA} />
+          </div>
+        </div>
+        <GreenBtn onClick={tambah} style={{ marginTop: "12px", padding: "8px 16px", fontSize: "12px" }}>➕ Tambah Hari Libur</GreenBtn>
+      </div>
+      {groups.length === 0 ? (
+        <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "20px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>Belum ada hari libur yang ditandai.</div>
+      ) : (
+        <div style={{ background: "white", borderRadius: THEME.radius.md, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: THEME.shadow.card }}>
+          {groups.map((grp) => {
+            const a = grp.dates[0];
+            const b = grp.dates[grp.dates.length - 1];
+            return (
+              <div key={`${a}|${grp.layer}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", padding: "10px 14px", borderBottom: "1px solid #f3f4f6" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#111827" }}>{grp.ket}</div>
+                  <div style={{ fontSize: "11.5px", color: "#6b7280", marginTop: "2px" }}>
+                    {a === b ? formatTanggalIndo(a) : `${formatTanggalIndo(a)} — ${formatTanggalIndo(b)} (${grp.dates.length} hari)`} · {LIBUR_LAYER_LABEL[grp.layer] || grp.layer}
+                  </div>
+                </div>
+                <button onClick={() => hapus(grp)} className="btn-hover" style={{ padding: "5px 10px", background: "#fee2e2", color: "#991b1b", border: "none", borderRadius: THEME.radius.sm, fontSize: "11px", cursor: "pointer", flexShrink: 0 }}>🗑️ Hapus</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Admin/Superadmin's final approval for koreksi kehadiran older than
+// KOREKSI_LANGSUNG_HARI days — filed by TU directly, or a guru's pengajuan TU already
+// approved and forwarded (see prosesPengajuan).
+function AdminPersetujuanKoreksi({ user, JADWAL, pengajuanKehadiran, setPengajuanKehadiran, setKehadiranGuru, setNotifikasi, deviceTokens }) {
+  const guruByKode = useMemo(() => Object.fromEntries((JADWAL.guru || []).map((g) => [g.kode, g])), [JADWAL.guru]);
+  const semua = useMemo(() => (pengajuanKehadiran || []).slice().reverse(), [pengajuanKehadiran]);
+  const menunggu = semua.filter((p) => p.status === "menunggu" && p.tahap === "admin");
+  const riwayat = semua.filter((p) => !(p.status === "menunggu" && p.tahap === "admin")).slice(0, 50);
+  const ctx = { oleh: user?.username || "admin", peran: "admin", setPengajuanKehadiran, setKehadiranGuru, setNotifikasi, deviceTokens };
+  const tolak = (p) => {
+    const c = window.prompt("Alasan penolakan (opsional):");
+    if (c === null) return;
+    prosesPengajuan(ctx, p, "tolak", c.trim());
+  };
+  return (
+    <div>
+      <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: 0 }}>
+        Koreksi kehadiran untuk tanggal lebih dari {KOREKSI_LANGSUNG_HARI} hari lalu perlu persetujuan Admin. Koreksi bisa disetujui sampai akhir bulan berikutnya; setelah itu bulan tersebut ditutup.
+      </p>
+      <div style={{ fontSize: "13px", fontWeight: 600, color: "#374151", marginBottom: "8px" }}>⏳ Menunggu Persetujuan ({menunggu.length})</div>
+      <PengajuanList items={menunggu} guruByKode={guruByKode} mode="admin"
+        onSetujui={(p) => prosesPengajuan(ctx, p, "setujui")} onTolak={tolak} emptyText="Tidak ada koreksi yang menunggu persetujuan." />
+      <div style={{ fontSize: "13px", fontWeight: 600, color: "#374151", margin: "20px 0 8px" }}>🗂️ Riwayat</div>
+      <PengajuanList items={riwayat} guruByKode={guruByKode} mode="lihat" emptyText="Belum ada riwayat pengajuan." />
     </div>
   );
 }
@@ -6115,6 +6850,11 @@ export default function App() {
   // trimNotifikasi) since — unlike kehadiranGuru, which is naturally bounded per date —
   // this has no natural key to prune by.
   const [notifikasi, setNotifikasi, notifikasiReady] = useRemoteState("notifikasi", []);
+  // Admin-marked libur days ({ [dateISO]: { ket, layer } }) and pengajuan perubahan
+  // kehadiran (flat array, newest last) — both reset/archived with the semester like
+  // kehadiranGuru. See liburUntuk / makePengajuan / prosesPengajuan.
+  const [hariLibur, setHariLibur, hariLiburReady] = useRemoteState("hariLibur", {});
+  const [pengajuanKehadiran, setPengajuanKehadiran, pengajuanKehadiranReady] = useRemoteState("pengajuanKehadiran", []);
   const [viewingArchive, setViewingArchive] = useState(false);
   // On a phone-width screen, Sidebar's fixed 250px squeezes content into a sliver (tables/
   // buttons cut off with no way to reach the rest) — so it starts closed there instead of
@@ -6227,7 +6967,7 @@ export default function App() {
     if (changed) setKehadiranGuru(next);
   }, [kehadiranGuruReady, jadwalReady, clReady]); // eslint-disable-line
 
-  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady && kehadiranGuruReady && deviceTokensReady && notifikasiReady)) {
+  if (!(clReady && stReady && gmReady && accsReady && allGReady && allKepReady && semReady && lembagaReady && jadwalReady && archivesReady && kehadiranGuruReady && deviceTokensReady && notifikasiReady && hariLiburReady && pengajuanKehadiranReady)) {
     return <LoadingScreen />;
   }
 
@@ -6266,7 +7006,7 @@ export default function App() {
         showLogin ? (
           <LoginPage onLogin={setUser} ACCS={ACCS} GM={GM} CL={CL} SEM={SEM} LEMBAGA={LEMBAGA} onBack={() => setShowLogin(false)} />
         ) : (
-          <PublicRekapLanding JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} LEMBAGA={LEMBAGA} onMasuk={() => setShowLogin(true)} />
+          <PublicRekapLanding JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} hariLibur={hariLibur} LEMBAGA={LEMBAGA} onMasuk={() => setShowLogin(true)} />
         )
       ) : (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
@@ -6310,12 +7050,12 @@ export default function App() {
                     </div>
                   )}
                   {(user.role === "admin" || user.role === "superadmin") && (
-                    <AdminView CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} isSuperAdmin={user.role === "superadmin"} tab={effNavKey} />
+                    <AdminView user={user} CL={CL} setCL={setCL} ST={ST} setST={setST} GM={GM} setGM={setGM} ACCS={ACCS} setACCS={setACCS} allG={allG} setAllG={setAllG} allKep={allKep} setAllKep={setAllKep} SEM={SEM} setSEM={setSEM} archives={archives} setArchives={setArchives} LEMBAGA={LEMBAGA} setLEMBAGA={setLEMBAGA} JADWAL={JADWAL} setJADWAL={setJADWAL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} hariLibur={hariLibur} setHariLibur={setHariLibur} pengajuanKehadiran={pengajuanKehadiran} setPengajuanKehadiran={setPengajuanKehadiran} setNotifikasi={setNotifikasi} deviceTokens={deviceTokens} isSuperAdmin={user.role === "superadmin"} tab={effNavKey} />
                   )}
                   {user.role === "guru" && !inJadwalSection && <GuruView user={user} allG={allG} setAllG={setAllG} CL={CL} ST={ST} SEM={SEM} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} />}
                   {user.role === "wk" && !inJadwalSection && <WkView user={user} allG={allG} allKep={allKep} setAllKep={setAllKep} CL={CL} ST={ST} SEM={SEM} LEMBAGA={LEMBAGA} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} setTab={setNavKey} />}
-                  {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} ACCS={ACCS} deviceTokens={deviceTokens} setNotifikasi={setNotifikasi} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
-                  {user.role === "tu" && !JADWAL_ONLY && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} ACCS={ACCS} deviceTokens={deviceTokens} setNotifikasi={setNotifikasi} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
+                  {(user.role === "guru" || user.role === "wk") && inJadwalSection && <GuruJadwalView user={user} JADWAL={JADWAL} CL={CL} LEMBAGA={LEMBAGA} SEM={SEM} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} hariLibur={hariLibur} pengajuanKehadiran={pengajuanKehadiran} setPengajuanKehadiran={setPengajuanKehadiran} ACCS={ACCS} deviceTokens={deviceTokens} setNotifikasi={setNotifikasi} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
+                  {user.role === "tu" && !JADWAL_ONLY && <TuKehadiranView user={user} JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} setKehadiranGuru={setKehadiranGuru} hariLibur={hariLibur} pengajuanKehadiran={pengajuanKehadiran} setPengajuanKehadiran={setPengajuanKehadiran} ACCS={ACCS} deviceTokens={deviceTokens} setNotifikasi={setNotifikasi} locked={!isAccConfirmed(ACCS.find((a) => a.u === user.username))} tab={effNavKey} />}
                 </>
               )}
             </div>
