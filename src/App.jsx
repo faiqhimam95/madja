@@ -3189,7 +3189,7 @@ function AdminJadwal({ JADWAL, setJADWAL, LEMBAGA, SEM, ACCS, GM, CL, tab }) {
     const tidakN = ket?.tidakBisa ? Object.values(ket.tidakBisa).reduce((s, o) => s + Object.keys(o).length, 0) : 0;
     const base = kelasN === 0 && tidakN === 0
       ? "Semua kelas · semua jam bisa"
-      : `${kelasN > 0 ? `${kelasN} kelas dipilih` : "Semua kelas"} · ${tidakN > 0 ? `${tidakN} slot tidak bisa` : "semua jam bisa"}`;
+      : `${kelasN > 0 ? `${kelasN} kelas dipilih` : "Semua kelas"} · ${tidakN > 0 ? `${tidakN} jam tidak bisa` : "semua jam bisa"}`;
     const alias = JADWAL.guru.find((g) => g.kode === kode)?.alias;
     return alias ? `${base} · Panggilan: "${alias}"` : base;
   };
@@ -5117,7 +5117,7 @@ function GuruJadwalView({ user, JADWAL, CL, LEMBAGA, SEM, kehadiranGuru, setKeha
         myGuru ? (
           <>
             <p style={{ fontSize: "11.5px", color: "#6b7280", marginTop: 0, marginBottom: "12px" }}>
-              ✏️ Kalau ada kehadiran yang tidak terisi atau tidak sesuai kenyataan, pilih tampilan <strong>Per Hari</strong>, pilih tanggalnya, lalu tekan <strong>Ajukan Perubahan</strong> pada slot tersebut. Pengajuan akan diperiksa TU.
+              ✏️ Kalau ada kehadiran yang tidak terisi atau tidak sesuai kenyataan, pilih tampilan <strong>Per Hari</strong>, pilih tanggalnya, lalu tekan <strong>Ajukan Perubahan</strong> pada jam tersebut. Pengajuan akan diperiksa TU.
             </p>
             <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} hariLibur={hariLibur} scopeGuruKode={myGuru.kode}
               pengajuanKehadiran={pengajuanKehadiran} onAjukanPerubahan={ajukanPerubahan} locked={locked} />
@@ -5640,7 +5640,7 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, ha
   // of writing — the slot keeps its current (or otomatis) status until Admin approves.
   const ajukanKeAdmin = (row, status) => {
     if (locked) return;
-    if (row.pending) { alert("Slot ini sudah punya pengajuan yang masih menunggu persetujuan."); return; }
+    if (row.pending) { alert("Jam ini sudah punya pengajuan yang masih menunggu persetujuan."); return; }
     const statusLama = row.rec?.status || (row.otomatis ? "O" : "");
     if (statusLama === status) return;
     const alasan = window.prompt(
@@ -5706,7 +5706,7 @@ function TuKehadiranView({ user, JADWAL, CL, kehadiranGuru, setKehadiranGuru, ha
     const pilihanOf = (s) => pilihan[slotKey(s.dateISO, s.layer, s.jam.kode, s.kelas.kode)];
     const keAdmin = slots.filter((s) => (pilihanOf(s) || "H") !== "H" && koreksiTier(s.dateISO, today) === "admin");
     if (keAdmin.length > 0 && !ket.trim()) {
-      alert(`Ada ${keAdmin.length} slot lebih dari ${KOREKSI_LANGSUNG_HARI} hari lalu yang ditandai tidak hadir — isi alasan koreksi dulu, karena perlu persetujuan Admin.`);
+      alert(`Ada ${keAdmin.length} jam lebih dari ${KOREKSI_LANGSUNG_HARI} hari lalu yang ditandai tidak hadir — isi alasan koreksi dulu, karena perlu persetujuan Admin.`);
       return false;
     }
     const now = new Date().toISOString();
@@ -5840,7 +5840,7 @@ function PengingatIsiKehadiran({ pengingat, guruByKode, locked, onSimpan }) {
     if (onSimpan(slots, pil, ket)) { setPilihMode(false); setPilihan({}); setKet(""); }
   };
   const hadirSemua = () => {
-    if (!window.confirm(`Tandai ${slots.length} slot yang belum diisi sebagai Hadir?`)) return;
+    if (!window.confirm(`Tandai ${slots.length} jam yang belum diisi sebagai Hadir?`)) return;
     simpan({});
   };
   const byDate = [];
@@ -5854,7 +5854,7 @@ function PengingatIsiKehadiran({ pengingat, guruByKode, locked, onSimpan }) {
     <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: THEME.radius.md, padding: "12px 14px", marginBottom: "14px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
         <div>
-          <div style={{ fontSize: "13px", fontWeight: 600, color: "#92400e" }}>⏰ Ada {slots.length} slot belum diisi {pengingat.label}</div>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "#92400e" }}>⏰ Ada {slots.length} jam belum diisi {pengingat.label}</div>
           <div style={{ fontSize: "11.5px", color: "#92400e", opacity: 0.85, marginTop: "2px" }}>
             {formatTanggalIndo(pengingat.start)} — {formatTanggalIndo(pengingat.end)}. Jika dibiarkan, semua dihitung Hadir (otomatis). Tandai yang sebenarnya tidak hadir agar rekap sesuai kenyataan.
           </div>
@@ -5898,7 +5898,7 @@ function PengingatIsiKehadiran({ pengingat, guruByKode, locked, onSimpan }) {
             ))}
           </div>
           <input type="text" value={ket} onChange={(e) => setKet(e.target.value)}
-            placeholder={adaKeAdmin ? "Alasan koreksi (wajib — ada slot yang perlu persetujuan Admin)" : "Keterangan untuk yang Izin (opsional)"}
+            placeholder={adaKeAdmin ? "Alasan koreksi (wajib — ada jam yang perlu persetujuan Admin)" : "Keterangan untuk yang Izin (opsional)"}
             style={{ ...inputA, marginTop: "8px", fontSize: "12px", borderColor: adaKeAdmin && !ket.trim() ? "#f59e0b" : "#d1d5db" }} />
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
             <button disabled={locked} onClick={() => simpan(pilihan)} className="btn-hover" style={btn(THEME.green[700], "white")}>💾 Simpan (sisanya Hadir)</button>
@@ -6117,10 +6117,10 @@ function buildKehadiranGuruExcel(JADWAL, CL, kehadiranGuru, hariLibur, LEMBAGA =
     [`${LEMBAGA.namaLembaga} ${LEMBAGA.namaPondok}`, ...Array(NC - 1).fill("")],
     [`REKAPITULASI KEHADIRAN GURU — Semester ${semLabel(SEM)}`, ...Array(NC - 1).fill("")],
     Array(NC).fill(""),
-    ["Kode", "Nama Guru", "Hadir", "Hadir (otomatis)", "Sakit", "Izin", "Tanpa Keterangan", "Total Slot", "% Hadir", "Menit Terlambat"],
+    ["Kode", "Nama Guru", "Hadir", "Hadir (otomatis)", "Sakit", "Izin", "Tanpa Keterangan", "Total Jam", "% Hadir", "Menit Terlambat"],
     ...rows,
     Array(NC).fill(""),
-    ["Hadir (otomatis) = slot hari sekolah yang tidak diisi TU dan bukan hari libur, dihitung hadir.", ...Array(NC - 1).fill("")],
+    ["Hadir (otomatis) = jam pelajaran di hari sekolah yang tidak diisi TU dan bukan hari libur, dihitung hadir.", ...Array(NC - 1).fill("")],
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 8 }, { wch: 15 }, { wch: 8 }, { wch: 8 }, { wch: 16 }, { wch: 10 }, { wch: 9 }, { wch: 15 }];
@@ -6373,7 +6373,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, hariLibur = {}, scopeL
                       <td style={{ padding: "10px 12px", minWidth: "180px", verticalAlign: "middle" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                           <div style={{ flex: 1, minWidth: "80px" }}><KehadiranBarChart counts={r.c} /></div>
-                          <span style={{ fontSize: "11.5px", color: "#52584f", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><strong style={{ color: "#065f46" }}>{pctHadir(r.c)}%</strong> · {total} slot{r.c.O > 0 ? ` (${r.c.O} otomatis)` : ""}</span>
+                          <span style={{ fontSize: "11.5px", color: "#52584f", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><strong style={{ color: "#065f46" }}>{pctHadir(r.c)}%</strong> · {total} jam{r.c.O > 0 ? ` (${r.c.O} otomatis)` : ""}</span>
                         </div>
                       </td>
                       <td style={{ padding: "10px 12px", verticalAlign: "middle", whiteSpace: "nowrap" }}>
@@ -6439,7 +6439,7 @@ function KehadiranRecapPanel({ JADWAL, CL, kehadiranGuru, hariLibur = {}, scopeL
       )}
       {mode !== "hari" && totalRecords > 0 && (
         <p style={{ fontSize: "10.5px", color: "#9ca3af", margin: "8px 2px 0" }}>
-          Hadir (otomatis) = slot hari sekolah yang sudah lewat tapi tidak diisi TU (dan bukan hari libur) — dihitung hadir.
+          Hadir (otomatis) = jam pelajaran di hari sekolah yang sudah lewat tapi tidak diisi TU (dan bukan hari libur) — dihitung hadir.
         </p>
       )}
     </div>
@@ -6454,7 +6454,7 @@ function AdminKehadiranGuru({ JADWAL, CL, kehadiranGuru, hariLibur, LEMBAGA, SEM
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", gap: "8px", flexWrap: "wrap" }}>
-        <p style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}>Rekap kehadiran guru, diisi Tata Usaha Putra/Putri tiap hari lewat menu Kehadiran Guru mereka sendiri. Slot yang tidak diisi dihitung Hadir (otomatis) kecuali tanggalnya ditandai di menu Hari Libur. Direset bersamaan dengan reset semester. Export Excel selalu mengunduh rekap satu semester penuh, terlepas dari filter tampilan di bawah.</p>
+        <p style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}>Rekap kehadiran guru, diisi Tata Usaha Putra/Putri tiap hari lewat menu Kehadiran Guru mereka sendiri. Jam pelajaran yang tidak diisi dihitung Hadir (otomatis) kecuali tanggalnya ditandai di menu Hari Libur. Direset bersamaan dengan reset semester. Export Excel selalu mengunduh rekap satu semester penuh, terlepas dari filter tampilan di bawah.</p>
         <button onClick={doExport} style={{ padding: "8px 16px", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "white", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>📥 Export Excel</button>
       </div>
       <KehadiranRecapPanel JADWAL={JADWAL} CL={CL} kehadiranGuru={kehadiranGuru} hariLibur={hariLibur} />
@@ -6486,7 +6486,7 @@ function AdminHariLibur({ hariLibur, setHariLibur }) {
     setForm((f) => ({ ...f, selesai: "", ket: "" }));
   };
   const hapus = (grp) => {
-    if (!window.confirm(`Hapus hari libur "${grp.ket}" (${grp.dates.length} hari)? Slot yang kosong pada tanggal tersebut akan kembali dihitung Hadir (otomatis).`)) return;
+    if (!window.confirm(`Hapus hari libur "${grp.ket}" (${grp.dates.length} hari)? Jam pelajaran yang kosong pada tanggal tersebut akan kembali dihitung Hadir (otomatis).`)) return;
     setHariLibur((prev) => {
       const next = { ...(prev || {}) };
       grp.dates.forEach((d) => { delete next[d]; });
